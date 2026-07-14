@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Priority?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.dud.embydownload.controller.EpisodeListController"
+      spacing="16"
+      styleClass="root-pane, page-padding">
+
+    <HBox alignment="CENTER_LEFT" spacing="12">
+        <Button text="← 返回" styleClass="icon-button" onAction="#onBack"/>
+        <VBox spacing="4" HBox.hgrow="ALWAYS">
+            <Label fx:id="titleLabel" styleClass="brand-title-small"/>
+            <Label fx:id="subtitleLabel" styleClass="meta-label"/>
+        </VBox>
+        <ProgressIndicator fx:id="loadingIndicator" prefWidth="24" prefHeight="24"
+                           visible="false" managed="false"/>
+        <Button text="传输" styleClass="ghost-button" onAction="#onOpenTransfer"/>
+    </HBox>
+
+    <HBox fx:id="seasonRow" alignment="CENTER_LEFT" spacing="12" managed="false" visible="false"
+          styleClass="surface-card">
+        <padding>
+            <Insets top="10" right="12" bottom="10" left="12"/>
+        </padding>
+        <Label text="选择季" styleClass="field-label"/>
+        <ComboBox fx:id="seasonCombo" prefWidth="280" onAction="#onSeasonChanged" HBox.hgrow="ALWAYS"/>
+    </HBox>
+
+    <HBox alignment="CENTER_LEFT" spacing="12">
+        <CheckBox fx:id="selectAllCheck" text="全选" onAction="#onToggleSelectAll"/>
+        <Label fx:id="selectionLabel" styleClass="meta-label" text="已选 0 项" HBox.hgrow="ALWAYS"/>
+        <Button fx:id="downloadButton" text="下载选中" styleClass="primary-button"
+                disable="true" onAction="#onDownloadSelected"/>
+    </HBox>
+
+    <Label fx:id="statusLabel" styleClass="meta-label" text="正在加载列表..."/>
+
+    <ListView fx:id="episodeList" VBox.vgrow="ALWAYS" styleClass="result-list"/>
+</VBox>

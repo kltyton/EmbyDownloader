@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Priority?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.dud.embydownload.controller.HomeController"
+      spacing="18"
+      styleClass="root-pane, page-padding">
+
+    <HBox alignment="CENTER_LEFT" spacing="16">
+        <VBox spacing="6" HBox.hgrow="ALWAYS">
+            <Label text="媒体库搜索" styleClass="brand-title-small"/>
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Label fx:id="userInfoLabel" styleClass="chip"/>
+                <Label fx:id="serverInfoLabel" styleClass="meta-label"/>
+            </HBox>
+        </VBox>
+        <Button text="传输" styleClass="ghost-button" onAction="#onOpenTransfer"/>
+        <Button text="设置" styleClass="ghost-button" onAction="#onOpenSettings"/>
+        <Button text="退出登录" styleClass="ghost-button" onAction="#onLogout"/>
+    </HBox>
+
+    <HBox alignment="CENTER_LEFT" spacing="12" styleClass="surface-card">
+        <padding>
+            <Insets top="12" right="12" bottom="12" left="12"/>
+        </padding>
+        <TextField fx:id="searchField" promptText="搜索影片或音乐..." HBox.hgrow="ALWAYS" onAction="#onSearch"/>
+        <ComboBox fx:id="mediaTypeCombo" prefWidth="128"/>
+        <Button fx:id="searchButton" text="搜索" styleClass="primary-button" onAction="#onSearch"/>
+        <ProgressIndicator fx:id="searchLoading" prefWidth="24" prefHeight="24"
+                           visible="false" managed="false"/>
+    </HBox>
+
+    <Label fx:id="statusLabel" styleClass="meta-label" text="输入关键词后开始搜索"/>
+
+    <ListView fx:id="resultList" VBox.vgrow="ALWAYS" styleClass="result-list"/>
+</VBox>

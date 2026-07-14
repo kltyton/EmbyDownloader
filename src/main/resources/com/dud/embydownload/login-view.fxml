@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.PasswordField?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Priority?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<StackPane xmlns:fx="http://javafx.com/fxml"
+           fx:controller="com.dud.embydownload.controller.LoginController"
+           styleClass="root-pane, login-hero">
+    <HBox alignment="CENTER" spacing="24" maxWidth="900" styleClass="login-layout">
+        <VBox spacing="18" alignment="TOP_LEFT" styleClass="login-side" HBox.hgrow="NEVER">
+            <Label text="ED" styleClass="window-logo"/>
+            <Label text="Emby Download" styleClass="login-side-title"/>
+            <Label text="连接你的 Emby 服务器，搜索影片与音乐，并批量下载到本地。"
+                   styleClass="login-side-text" wrapText="true"/>
+            <Region VBox.vgrow="ALWAYS"/>
+            <Label text="Material Design · PC" styleClass="login-side-text"/>
+        </VBox>
+
+        <VBox spacing="16" maxWidth="460" HBox.hgrow="ALWAYS" styleClass="login-form-card">
+            <HBox alignment="CENTER_LEFT" spacing="4">
+                <Label text="欢迎回来" styleClass="login-form-title" HBox.hgrow="ALWAYS"/>
+                <Button text="代理" styleClass="icon-button" onAction="#onOpenProxy"/>
+                <Button text="设置" styleClass="icon-button" onAction="#onOpenSettings"/>
+            </HBox>
+            <Label text="选择已保存账号，或填写新的登录信息" styleClass="subtitle"/>
+
+            <VBox fx:id="savedAccountBox" spacing="8" managed="false" visible="false">
+                <Label text="已保存的登录" styleClass="field-label"/>
+                <ComboBox fx:id="savedAccountCombo" maxWidth="Infinity" onAction="#onSavedAccountSelected"/>
+            </VBox>
+
+            <VBox spacing="8">
+                <Label text="服务器地址" styleClass="field-label"/>
+                <TextField fx:id="serverUrlField" promptText="例如 http://192.168.1.10:8096"/>
+            </VBox>
+
+            <VBox spacing="8">
+                <Label text="用户名" styleClass="field-label"/>
+                <TextField fx:id="usernameField" promptText="Emby 用户名"/>
+            </VBox>
+
+            <VBox spacing="8">
+                <Label text="密码" styleClass="field-label"/>
+                <PasswordField fx:id="passwordField" promptText="Emby 密码"/>
+            </VBox>
+
+            <CheckBox fx:id="rememberCheck" text="记住登录信息" selected="true"/>
+
+            <Label fx:id="errorLabel" styleClass="error-label" wrapText="true" managed="false" visible="false"/>
+
+            <HBox alignment="CENTER_LEFT" spacing="14">
+                <Button fx:id="loginButton" text="登录" styleClass="primary-button" onAction="#onLogin"
+                        prefWidth="140"/>
+                <ProgressIndicator fx:id="loadingIndicator" prefWidth="24" prefHeight="24"
+                                   visible="false" managed="false"/>
+            </HBox>
+        </VBox>
+    </HBox>
+</StackPane>

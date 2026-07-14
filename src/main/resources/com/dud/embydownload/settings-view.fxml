@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Priority?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.dud.embydownload.controller.SettingsController"
+      spacing="0"
+      styleClass="root-pane">
+
+    <HBox alignment="CENTER_LEFT" spacing="12" styleClass="page-header">
+        <Button text="← 返回" styleClass="icon-button" onAction="#onBack"/>
+        <Label text="设置" styleClass="brand-title-small"/>
+    </HBox>
+
+    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="page-scroll" VBox.vgrow="ALWAYS">
+        <content>
+            <VBox spacing="18" styleClass="page-scroll-content">
+                <VBox spacing="14" styleClass="surface-card">
+                    <Label text="下载" styleClass="settings-section-title"/>
+                    <Label text="默认下载目录" styleClass="field-label"/>
+                    <HBox spacing="12" alignment="CENTER_LEFT">
+                        <TextField fx:id="downloadPathField" editable="false" HBox.hgrow="ALWAYS"/>
+                        <Button text="浏览" styleClass="ghost-button" onAction="#onBrowseDownloadPath"/>
+                    </HBox>
+                    <Label text="下载时将默认保存到此目录；若目录不存在会自动创建。" styleClass="meta-label"/>
+
+                    <HBox spacing="12" alignment="CENTER_LEFT" styleClass="switch-row">
+                        <VBox spacing="4" HBox.hgrow="ALWAYS">
+                            <Label text="网络盘本地缓存" styleClass="item-title"/>
+                            <Label fx:id="stagingHintLabel" text="下载到 NAS/网络盘时先保存到本地 SSD，完成后再移动到目标目录" styleClass="meta-label"/>
+                        </VBox>
+                        <CheckBox fx:id="stagingDownloadCheck" text="启用" onAction="#onToggleStagingDownload"/>
+                    </HBox>
+
+                    <Label text="本地缓存目录" styleClass="field-label"/>
+                    <HBox spacing="12" alignment="CENTER_LEFT">
+                        <TextField fx:id="stagingPathField" editable="false" HBox.hgrow="ALWAYS"/>
+                        <Button text="浏览" styleClass="ghost-button" onAction="#onBrowseStagingPath"/>
+                    </HBox>
+                    <Label text="建议放在本机 SSD（如 C 盘），可显著提升下载到 NAS 的速度。" styleClass="meta-label"/>
+                </VBox>
+
+                <VBox spacing="14" styleClass="surface-card">
+                    <Label text="外观" styleClass="settings-section-title"/>
+                    <HBox spacing="12" alignment="CENTER_LEFT" styleClass="switch-row">
+                        <VBox spacing="4" HBox.hgrow="ALWAYS">
+                            <Label text="深色模式" styleClass="item-title"/>
+                            <Label text="降低亮度，适合夜间使用" styleClass="meta-label"/>
+                        </VBox>
+                        <CheckBox fx:id="darkModeCheck" text="启用" onAction="#onToggleDarkMode"/>
+                    </HBox>
+                </VBox>
+
+                <VBox spacing="14" styleClass="surface-card">
+                    <Label text="网络" styleClass="settings-section-title"/>
+                    <HBox spacing="12" alignment="CENTER_LEFT" styleClass="switch-row">
+                        <VBox spacing="4" HBox.hgrow="ALWAYS">
+                            <Label text="代理节点" styleClass="item-title"/>
+                            <Label fx:id="proxyHintLabel" text="配置下载节点，加速或中转传输" styleClass="meta-label"/>
+                        </VBox>
+                        <Button text="配置" styleClass="ghost-button" onAction="#onOpenProxySettings"/>
+                    </HBox>
+                </VBox>
+
+                <VBox spacing="14" styleClass="surface-card">
+                    <Label text="已保存登录" styleClass="settings-section-title"/>
+                    <Label fx:id="accountsHintLabel" styleClass="meta-label"/>
+                    <Button fx:id="clearAccountsButton" text="清除全部已保存登录" styleClass="ghost-button"
+                            onAction="#onClearAccounts"/>
+                </VBox>
+            </VBox>
+        </content>
+    </ScrollPane>
+</VBox>

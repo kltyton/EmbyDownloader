@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Priority?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.dud.embydownload.controller.TransferController"
+      spacing="12"
+      styleClass="root-pane, page-padding">
+
+    <HBox alignment="CENTER_LEFT" spacing="12">
+        <Button fx:id="backButton" text="← 返回" styleClass="icon-button" onAction="#onBack"/>
+        <VBox spacing="4" HBox.hgrow="ALWAYS">
+            <Label text="传输" styleClass="brand-title-small"/>
+            <Label fx:id="subtitleLabel" styleClass="meta-label" text="准备开始下载..."/>
+        </VBox>
+        <Button fx:id="editModeButton" text="编辑" styleClass="ghost-button" onAction="#onToggleEditMode"/>
+        <Button fx:id="deleteCompletedButton" text="删除已完成" styleClass="ghost-button"
+                onAction="#onDeleteCompleted"/>
+    </HBox>
+
+    <HBox fx:id="batchBar" spacing="8" alignment="CENTER_LEFT" visible="false" managed="false"
+          styleClass="transfer-batch-bar">
+        <CheckBox fx:id="selectAllCheck" text="全选" onAction="#onToggleSelectAll"/>
+        <Button text="暂停" styleClass="compact-button" onAction="#onBatchPause"/>
+        <Button text="继续" styleClass="compact-button" onAction="#onBatchResume"/>
+        <Button text="取消" styleClass="compact-button" onAction="#onBatchCancel"/>
+        <Button text="删除" styleClass="compact-danger-button" onAction="#onBatchDelete"/>
+        <Label fx:id="selectionHintLabel" styleClass="meta-label" text="已选 0 项"/>
+    </HBox>
+
+    <Label fx:id="pathLabel" styleClass="meta-label" wrapText="true"/>
+    <Label fx:id="nodeLabel" styleClass="meta-label" wrapText="true" text="下载节点：直连"/>
+
+    <ListView fx:id="taskList" styleClass="result-list, transfer-list" VBox.vgrow="ALWAYS"/>
+</VBox>
