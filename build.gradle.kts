@@ -51,7 +51,16 @@ tasks.withType<Test> {
 
 jlink {
     imageZip.set(layout.buildDirectory.file("/distributions/app-${javafx.platform.classifier}.zip"))
-    options.set(listOf("--strip-debug", "--compress", "2", "--no-header-files", "--no-man-pages"))
+    // 强制带上 TLS/HTTPS 所需加密模块（仅依赖 java.net.http 时 jlink 常会漏掉）
+    options.set(
+        listOf(
+            "--strip-debug",
+            "--compress", "2",
+            "--no-header-files",
+            "--no-man-pages",
+            "--add-modules", "jdk.crypto.ec,jdk.crypto.cryptoki",
+        )
+    )
     launcher {
         name = "EmbyDownload"
     }
@@ -61,6 +70,8 @@ jlink {
         installerName = "EmbyDownload"
         installerType = "exe"
         icon = "packaging/app-icon.ico"
+        // 避免旧 installer 进程锁住 build/jpackage 导致无法清理重建
+        outputDir = "jpackage-out"
         installerOptions = listOf(
             "--win-dir-chooser",
             "--win-menu",
@@ -105,7 +116,7 @@ tasks.named("jlink") {
 
 tasks.named("jpackageImage") {
     doLast {
-        val imageDir = layout.buildDirectory.dir("jpackage/EmbyDownload").get().asFile
+        val imageDir = layout.buildDirectory.dir("jpackage-out/EmbyDownload").get().asFile
         copy {
             from(nativeMihomoDir) {
                 include("mihomo.exe")
@@ -123,5 +134,5 @@ tasks.register<Zip>("packagePortable") {
     dependsOn("jpackageImage")
     archiveFileName.set("EmbyDownload-$appReleaseVersion-portable-win.zip")
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
-    from(layout.buildDirectory.dir("jpackage/EmbyDownload"))
+    from(layout.buildDirectory.dir("jpackage-out/EmbyDownload"))
 }

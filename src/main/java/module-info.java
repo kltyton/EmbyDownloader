@@ -6,6 +6,9 @@ module com.dud.embydownload {
     requires com.google.gson;
     requires java.prefs;
     requires org.yaml.snakeyaml;
+    // jlink 自定义运行时默认可能不带这些模块，会导致 HTTPS 握手失败（handshake_failure）
+    requires jdk.crypto.ec;
+    requires jdk.crypto.cryptoki;
 
     opens com.dud.embydownload to javafx.fxml;
     opens com.dud.embydownload.controller to javafx.fxml;
