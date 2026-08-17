@@ -271,11 +271,15 @@ class EmbyClient(
     fun suggestFileName(item: BaseItemDto): String {
         val baseName = when (item.Type) {
             "Episode" -> {
-                val series = item.SeriesName?.let { sanitizeFileName(it) + " - " }.orEmpty()
+                val seriesPrefix = if (AppSettings.episodeFileNameIncludeSeries) {
+                    item.SeriesName?.takeIf { it.isNotBlank() }?.let { sanitizeFileName(it) + " - " }.orEmpty()
+                } else {
+                    ""
+                }
                 val season = item.ParentIndexNumber?.let { "S${it.toString().padStart(2, '0')}" }.orEmpty()
                 val episode = item.IndexNumber?.let { "E${it.toString().padStart(2, '0')}" }.orEmpty()
                 val title = sanitizeFileName(item.Name ?: "episode")
-                "$series$season$episode - $title".trim(' ', '-')
+                "$seriesPrefix$season$episode - $title".trim(' ', '-')
             }
             else -> sanitizeFileName(item.Name ?: "emby-item")
         }
@@ -283,6 +287,17 @@ class EmbyClient(
             ?: item.MediaSources?.firstOrNull()?.Container
             ?: item.Path?.substringAfterLast('.', "")?.takeIf { it.isNotBlank() && it.length <= 5 }
         return if (container.isNullOrBlank()) baseName else "$baseName.$container"
+    }
+
+    /**
+     * 剧集：在下载根目录下创建以剧名命名的文件夹；电影等其它类型直接落在根目录。
+     */
+    fun suggestTargetDirectory(baseDirectory: Path, item: BaseItemDto): Path {
+        if (item.Type != "Episode") return baseDirectory
+        val seriesName = item.SeriesName?.takeIf { it.isNotBlank() }
+            ?: item.Name?.takeIf { it.isNotBlank() }
+            ?: "Series"
+        return baseDirectory.resolve(sanitizeFileName(seriesName))
     }
 
     fun downloadItems(
@@ -298,7 +313,9 @@ class EmbyClient(
         }
         items.forEachIndexed { index, item ->
             control?.check()
-            val finalTarget = targetDirectory.resolve(suggestFileName(item))
+            val itemDirectory = suggestTargetDirectory(targetDirectory, item)
+            Files.createDirectories(itemDirectory)
+            val finalTarget = itemDirectory.resolve(suggestFileName(item))
             val writeTarget = if (useStaging) DownloadStaging.stagingFileFor(finalTarget) else finalTarget
             val totalBytes = item.MediaSources?.firstOrNull()?.Size
             var lastBytes = 0L
@@ -417,7 +434,7 @@ class EmbyClient(
         private fun encode(value: String): String =
             URLEncoder.encode(value, StandardCharsets.UTF_8)
 
-        private fun sanitizeFileName(name: String): String =
+        fun sanitizeFileName(name: String): String =
             name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "emby-item" }
     }
 }

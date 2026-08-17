@@ -1,13 +1,16 @@
 package com.dud.embydownload.controller
 
-import com.dud.embydownload.emby.model.DownloadPhase
 import com.dud.embydownload.settings.AppSettings
+import com.dud.embydownload.settings.SettingsData
 import com.dud.embydownload.transfer.DownloadStaging
+import com.dud.embydownload.transfer.TransferSession
 import com.dud.embydownload.ui.AppShell
 import com.dud.embydownload.ui.MaterialDialog
+import javafx.collections.FXCollections
 import javafx.fxml.FXML
 import javafx.scene.control.Button
 import javafx.scene.control.CheckBox
+import javafx.scene.control.ComboBox
 import javafx.scene.control.Label
 import javafx.scene.control.TextField
 import javafx.stage.DirectoryChooser
@@ -30,6 +33,12 @@ class SettingsController {
     private lateinit var stagingHintLabel: Label
 
     @FXML
+    private lateinit var concurrentCombo: ComboBox<Int>
+
+    @FXML
+    private lateinit var episodeSeriesNameCheck: CheckBox
+
+    @FXML
     private lateinit var darkModeCheck: CheckBox
 
     @FXML
@@ -42,6 +51,7 @@ class SettingsController {
     private lateinit var clearAccountsButton: Button
 
     private var returnTarget: ReturnTarget = ReturnTarget.HOME
+    private var suppressingConcurrentChange = false
 
     fun setReturnTarget(target: ReturnTarget) {
         returnTarget = target
@@ -53,9 +63,33 @@ class SettingsController {
         stagingDownloadCheck.isSelected = AppSettings.stagingDownloadEnabled
         stagingPathField.text = AppSettings.stagingPath
         updateStagingControls()
+        setupConcurrentCombo()
+        episodeSeriesNameCheck.isSelected = AppSettings.episodeFileNameIncludeSeries
         darkModeCheck.isSelected = AppSettings.darkMode
         refreshAccountsHint()
         refreshProxyHint()
+    }
+
+    private fun setupConcurrentCombo() {
+        suppressingConcurrentChange = true
+        concurrentCombo.items = FXCollections.observableArrayList(
+            (SettingsData.MIN_CONCURRENT_DOWNLOADS..SettingsData.MAX_CONCURRENT_DOWNLOADS).toList()
+        )
+        concurrentCombo.value = AppSettings.maxConcurrentDownloads
+        suppressingConcurrentChange = false
+    }
+
+    @FXML
+    private fun onConcurrentChanged() {
+        if (suppressingConcurrentChange) return
+        val value = concurrentCombo.value ?: return
+        AppSettings.maxConcurrentDownloads = value
+        TransferSession.refreshScheduler()
+    }
+
+    @FXML
+    private fun onToggleEpisodeSeriesName() {
+        AppSettings.episodeFileNameIncludeSeries = episodeSeriesNameCheck.isSelected
     }
 
     @FXML

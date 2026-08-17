@@ -62,7 +62,6 @@ class TransferItem(
 }
 
 object TransferSession {
-    private const val MAX_CONCURRENT = 2
     private const val MAX_AUTO_RETRIES = 5
 
     val items: ObservableList<TransferItem> = FXCollections.observableArrayList()
@@ -74,6 +73,9 @@ object TransferSession {
     }
     private val workerSeq = AtomicInteger(0)
     private val scheduleLock = Any()
+
+    private val maxConcurrent: Int
+        get() = AppSettings.maxConcurrentDownloads
 
     val isBusy: Boolean
         get() = items.any { it.isActive || it.state == TransferItemState.QUEUED }
@@ -102,7 +104,9 @@ object TransferSession {
         }
 
         val created = embyItems.map { item ->
-            TransferItem(embyItem = item, directory = targetDirectory).also { task ->
+            val itemDirectory = client.suggestTargetDirectory(targetDirectory, item)
+            Files.createDirectories(itemDirectory)
+            TransferItem(embyItem = item, directory = itemDirectory).also { task ->
                 val fileName = client.suggestFileName(item)
                 task.markQueuedFileName(fileName)
             }
@@ -236,10 +240,15 @@ object TransferSession {
         targets.forEach { cancel(it) }
     }
 
+    /** 并发数变更后立即按新上限调度排队任务。 */
+    fun refreshScheduler() {
+        kickScheduler()
+    }
+
     private fun kickScheduler() {
         synchronized(scheduleLock) {
             val runningCount = items.count { it.state == TransferItemState.RUNNING || it.state == TransferItemState.PAUSED }
-            var slots = (MAX_CONCURRENT - runningCount).coerceAtLeast(0)
+            var slots = (maxConcurrent - runningCount).coerceAtLeast(0)
             if (slots <= 0) return
             for (item in items.toList()) {
                 if (slots <= 0) break

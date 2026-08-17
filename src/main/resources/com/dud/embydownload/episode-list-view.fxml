@@ -38,6 +38,7 @@
 
     <HBox alignment="CENTER_LEFT" spacing="12">
         <CheckBox fx:id="selectAllCheck" text="全选" onAction="#onToggleSelectAll"/>
+        <Button fx:id="selectRangeButton" text="选择范围" styleClass="ghost-button" onAction="#onSelectRange"/>
         <Label fx:id="selectionLabel" styleClass="meta-label" text="已选 0 项" HBox.hgrow="ALWAYS"/>
         <Button fx:id="downloadButton" text="下载选中" styleClass="primary-button"
                 disable="true" onAction="#onDownloadSelected"/>

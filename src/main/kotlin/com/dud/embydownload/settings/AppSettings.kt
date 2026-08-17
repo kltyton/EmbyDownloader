@@ -41,16 +41,24 @@ data class SettingsData(
     var downloadPath: String = Path.of(System.getProperty("user.home"), "Downloads", "EmbyDownload").toString(),
     var stagingDownloadEnabled: Boolean = true,
     var stagingPath: String = defaultStagingPath(),
+    var maxConcurrentDownloads: Int = 2,
+    var episodeFileNameIncludeSeries: Boolean = false,
     var darkMode: Boolean = false,
     var savedAccounts: MutableList<SavedAccount> = mutableListOf(),
     var proxy: ProxyConfig? = ProxyConfig()
 ) {
     companion object {
+        const val MIN_CONCURRENT_DOWNLOADS = 1
+        const val MAX_CONCURRENT_DOWNLOADS = 5
+
         fun defaultStagingPath(): String {
             val localAppData = System.getenv("LOCALAPPDATA")
             val base = if (!localAppData.isNullOrBlank()) Path.of(localAppData) else Path.of(System.getProperty("user.home"))
             return base.resolve("EmbyDownload").resolve("staging").toString()
         }
+
+        fun clampConcurrent(value: Int): Int =
+            value.coerceIn(MIN_CONCURRENT_DOWNLOADS, MAX_CONCURRENT_DOWNLOADS)
     }
 }
 
@@ -82,6 +90,22 @@ object AppSettings {
         get() = cache.stagingPath.ifBlank { SettingsData.defaultStagingPath() }
         set(value) {
             cache.stagingPath = value
+            save()
+        }
+
+    var maxConcurrentDownloads: Int
+        get() = SettingsData.clampConcurrent(
+            if (cache.maxConcurrentDownloads <= 0) 2 else cache.maxConcurrentDownloads
+        )
+        set(value) {
+            cache.maxConcurrentDownloads = SettingsData.clampConcurrent(value)
+            save()
+        }
+
+    var episodeFileNameIncludeSeries: Boolean
+        get() = cache.episodeFileNameIncludeSeries
+        set(value) {
+            cache.episodeFileNameIncludeSeries = value
             save()
         }
 

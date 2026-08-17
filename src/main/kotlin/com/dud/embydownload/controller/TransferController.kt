@@ -3,6 +3,8 @@ package com.dud.embydownload.controller
 import com.dud.embydownload.emby.model.BaseItemDto
 import com.dud.embydownload.emby.model.DownloadPhase
 import com.dud.embydownload.proxy.DownloadHttpClients
+import com.dud.embydownload.settings.AppSettings
+import com.dud.embydownload.settings.SettingsData
 import com.dud.embydownload.transfer.TransferItem
 import com.dud.embydownload.transfer.TransferItemState
 import com.dud.embydownload.transfer.TransferSession
@@ -17,6 +19,7 @@ import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.control.Button
 import javafx.scene.control.CheckBox
+import javafx.scene.control.ComboBox
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
@@ -60,7 +63,11 @@ class TransferController {
     @FXML
     private lateinit var selectionHintLabel: Label
 
+    @FXML
+    private lateinit var concurrentCombo: ComboBox<Int>
+
     private var editMode = false
+    private var suppressingConcurrentChange = false
     private val selectedItems: ObservableSet<TransferItem> = FXCollections.observableSet()
 
     @FXML
@@ -68,6 +75,7 @@ class TransferController {
         pathLabel.text = "保存目录：${TransferSession.directory}"
         nodeLabel.text = DownloadHttpClients.activeNodeLabel()?.let { "下载节点：$it" } ?: "下载节点：直连"
         subtitleLabel.textProperty().bind(TransferSession.summaryProperty)
+        setupConcurrentCombo()
 
         TransferSession.directoryProperty.addListener { _, _, dir ->
             pathLabel.text = "保存目录：$dir"
@@ -81,6 +89,23 @@ class TransferController {
 
         taskList.items = TransferSession.items
         taskList.setCellFactory { TransferItemCell() }
+    }
+
+    private fun setupConcurrentCombo() {
+        suppressingConcurrentChange = true
+        concurrentCombo.items = FXCollections.observableArrayList(
+            (SettingsData.MIN_CONCURRENT_DOWNLOADS..SettingsData.MAX_CONCURRENT_DOWNLOADS).toList()
+        )
+        concurrentCombo.value = AppSettings.maxConcurrentDownloads
+        suppressingConcurrentChange = false
+    }
+
+    @FXML
+    private fun onConcurrentChanged() {
+        if (suppressingConcurrentChange) return
+        val value = concurrentCombo.value ?: return
+        AppSettings.maxConcurrentDownloads = value
+        TransferSession.refreshScheduler()
     }
 
     @FXML

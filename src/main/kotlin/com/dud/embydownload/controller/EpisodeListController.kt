@@ -43,6 +43,9 @@ class EpisodeListController {
     private lateinit var selectAllCheck: CheckBox
 
     @FXML
+    private lateinit var selectRangeButton: Button
+
+    @FXML
     private lateinit var downloadButton: Button
 
     @FXML
@@ -159,6 +162,38 @@ class EpisodeListController {
     }
 
     @FXML
+    private fun onSelectRange() {
+        val items = episodeList.items.orEmpty()
+        if (items.isEmpty()) {
+            MaterialDialog.info(AppShell.getStage(), "选择范围", "当前没有可勾选的内容")
+            return
+        }
+
+        val numbered = items.mapIndexed { index, item ->
+            episodeNumber(item, index) to item
+        }
+        val numbers = numbered.map { it.first }.distinct().sorted()
+        val range = MaterialDialog.pickIntRange(
+            owner = AppShell.getStage(),
+            title = "选择范围勾选",
+            values = numbers,
+            startLabel = "开始集数",
+            endLabel = "结束集数",
+            message = "选择起止集数（包前包后），确定后勾选该范围内的项目"
+        ) ?: return
+
+        val matched = numbered
+            .filter { (number, _) -> number in range }
+            .map { it.second }
+        selectedItems.addAll(matched)
+        episodeList.refresh()
+        statusLabel.text = "已按范围勾选第 ${range.first}–${range.last} 集（共 ${matched.size} 项）"
+    }
+
+    private fun episodeNumber(item: BaseItemDto, index: Int): Int =
+        item.IndexNumber ?: (index + 1)
+
+    @FXML
     private fun onBack() {
         navigateToHome()
     }
@@ -170,7 +205,8 @@ class EpisodeListController {
 
     @FXML
     private fun onDownloadSelected() {
-        val items = selectedItems.toList()
+        // 按列表从上到下顺序入队（selectedItems 是 Set，本身无序）
+        val items = episodeList.items.orEmpty().filter { it in selectedItems }
         if (items.isEmpty()) {
             statusLabel.text = "请先勾选要下载的内容"
             return
@@ -342,6 +378,7 @@ class EpisodeListController {
         loadingIndicator.isManaged = busy
         downloadButton.isDisable = busy || selectedItems.isEmpty()
         selectAllCheck.isDisable = busy
+        selectRangeButton.isDisable = busy
         episodeList.isDisable = busy
         seasonCombo.isDisable = busy
     }
