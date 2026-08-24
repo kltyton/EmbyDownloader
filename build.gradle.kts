@@ -11,7 +11,7 @@ group = "com.dud"
 version = "1.0-SNAPSHOT"
 
 // jpackage 安装包版本（不能用 SNAPSHOT）
-val appReleaseVersion = "1.0.0"
+val appReleaseVersion = "1.0.1"
 
 repositories {
     mavenCentral()
