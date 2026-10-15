@@ -8,6 +8,8 @@ import com.dud.embydownload.emby.model.DownloadProgress
 import com.dud.embydownload.emby.model.QueryResult
 import com.dud.embydownload.emby.model.PlaybackInfoResponse
 import com.dud.embydownload.emby.model.SearchMediaType
+import com.dud.embydownload.emby.subtitle.SubtitleContentException
+import com.dud.embydownload.emby.subtitle.SubtitleFiles
 import com.dud.embydownload.proxy.DownloadHttpClients
 import com.dud.embydownload.settings.AppSettings
 import com.dud.embydownload.settings.MediaSaveMode
@@ -316,8 +318,84 @@ class EmbyClient(
         val mediaSourceId = sourceId.takeIf { it.isNotBlank() }
             ?: throw EmbyApiException("缺少媒体源，无法导出字幕")
         val resolvedFormat = normalizeSubtitleFormat(format)
-        val url = "$baseUrl/Videos/${encode(itemId)}/${encode(mediaSourceId)}/Subtitles/$index/Stream.$resolvedFormat"
-        return downloadBinary(url, targetFile, control, "字幕下载失败", onProgress)
+        val source = item.MediaSources.orEmpty().firstOrNull { it.Id == mediaSourceId }
+            ?: throw EmbyApiException("字幕对应的媒体源不存在，请刷新媒体列表")
+        val stream = source.MediaStreams.orEmpty().firstOrNull { it.Type == "Subtitle" && it.Index == index }
+            ?: throw EmbyApiException("字幕轨道不存在，请刷新媒体列表")
+        val directory = System.getProperty("embydownload.subtitleCacheDir")?.let { Path.of(it) }
+            ?: Path.of(AppSettings.stagingPath, "subtitles")
+        val cache = SubtitleFiles.cacheFile(directory, listOf(baseUrl, userId.orEmpty(), itemId,
+            mediaSourceId, source.Size.toString(), source.Path.orEmpty(), index.toString(),
+            stream.Codec.orEmpty(), resolvedFormat), resolvedFormat)
+        val root = "$baseUrl/Videos/${encode(itemId)}/${encode(mediaSourceId)}/Subtitles/$index"
+        val candidates = linkedSetOf<String>()
+        val deliveryUrl = stream.DeliveryUrl?.takeIf { it.isNotBlank() }
+            ?: resolveSubtitleDeliveryUrl(itemId, mediaSourceId, index, resolvedFormat)
+        deliveryUrl?.let { candidates += resolveSubtitleUrl(it).toString() }
+        candidates += "$root/Stream.$resolvedFormat"
+        candidates += "$root/0/Stream.$resolvedFormat"
+        var invalidContent = false
+        for (url in candidates) {
+            control.check()
+            Files.deleteIfExists(targetFile)
+            try {
+                downloadBinary(url, targetFile, control, "字幕下载失败", onProgress)
+                if (!SubtitleFiles.isValid(targetFile, resolvedFormat)) {
+                    invalidContent = true
+                    Files.deleteIfExists(targetFile)
+                    continue
+                }
+                SubtitleFiles.store(targetFile, cache, control)
+                return targetFile
+            } catch (ex: SubtitleContentException) {
+                invalidContent = true
+                Files.deleteIfExists(targetFile)
+            } catch (ex: EmbyApiException) {
+                if (ex.statusCode != 404) throw ex
+            }
+        }
+        if (SubtitleFiles.restore(cache, targetFile, resolvedFormat, control, onProgress)) return targetFile
+        if (invalidContent) throw SubtitleContentException("服务器返回的内容不是有效的 ${resolvedFormat.uppercase()} 字幕，且没有对应字幕缓存")
+        throw EmbyApiException("服务器未返回此字幕（HTTP 404），且没有对应字幕缓存；可指定已有本地媒体文件导出", 404)
+    }
+
+    private fun resolveSubtitleDeliveryUrl(itemId: String, sourceId: String, index: Int, format: String): String? {
+        val actor = userId ?: throw EmbyApiException("未登录")
+        val original = "$baseUrl/Items/${encode(itemId)}/PlaybackInfo?UserId=${encode(actor)}" +
+            "&MediaSourceId=${encode(sourceId)}&SubtitleStreamIndex=$index&IsPlayback=false" +
+            "&AutoOpenLiveStream=false&EnableDirectPlay=true&EnableDirectStream=true&EnableTranscoding=false"
+        val uri = DownloadHttpClients.resolveApiUri(original, AppSettings.proxyConfig.searchNode())
+        val body = gson.toJson(mapOf("DeviceProfile" to mapOf(
+            "Name" to "Emby Download Subtitles",
+            "DirectPlayProfiles" to listOf(mapOf("Type" to "Video")),
+            "TranscodingProfiles" to emptyList<Any>(),
+            "SubtitleProfiles" to listOf(mapOf("Format" to format, "Method" to "External"))
+        )))
+        val request = HttpRequest.newBuilder(authorizedGet(uri.toString())) { _, _ -> true }
+            .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build()
+        val response = DownloadHttpClients.searchClient().send(request, HttpResponse.BodyHandlers.ofString())
+        if (response.statusCode() == 404) return null
+        if (response.statusCode() !in 200..299) {
+            throw EmbyApiException("无法取得字幕播放信息（HTTP ${response.statusCode()}）", response.statusCode())
+        }
+        val info = gson.fromJson(response.body(), PlaybackInfoResponse::class.java)
+        return info.MediaSources.orEmpty().firstOrNull { it.Id == sourceId }?.MediaStreams.orEmpty()
+            .firstOrNull { it.Index == index && it.Type == "Subtitle" }?.DeliveryUrl?.takeIf { it.isNotBlank() }
+    }
+
+    private fun resolveSubtitleUrl(url: String): URI {
+        val supplied = URI.create(url)
+        val base = URI.create("$baseUrl/")
+        val resolved = when {
+            supplied.isAbsolute -> supplied
+            supplied.rawPath.startsWith("/emby/", true) || supplied.rawPath.startsWith("/mediabrowser/", true) -> base.resolve(supplied)
+            else -> base.resolve(url.removePrefix("/"))
+        }
+        if (resolved.scheme !in setOf("http", "https") || resolved.host.isNullOrBlank() ||
+            resolved.rawUserInfo != null || (base.scheme == "https" && resolved.scheme != "https")) {
+            throw EmbyApiException("服务器返回了无效的字幕链接")
+        }
+        return resolved
     }
 
     fun downloadArtwork(
@@ -353,17 +431,22 @@ class EmbyClient(
             if (Files.isRegularFile(targetFile)) Files.size(targetFile) else 0L
         }.getOrDefault(0L).coerceAtLeast(0L)
 
-        val response = sendMediaRequest(client, uri, mapOf(
+        val headers = if (sameOrigin(URI.create(originalUrl), URI.create(baseUrl))) mapOf(
             "X-Emby-Token" to token,
             "X-Emby-Authorization" to authorizationHeader(token)
-        ), existingBytes)
+        ) else emptyMap()
+        val response = sendMediaRequest(client, uri, headers, existingBytes)
         val status = response.statusCode()
         if (status !in 200..299) {
             response.body().close()
-            if (status == 404 && errorPrefix == "字幕下载失败") {
-                throw EmbyApiException("服务器未返回此字幕（HTTP 404），可指定已有本地媒体文件导出", status)
-            }
             throw EmbyApiException("$errorPrefix（HTTP $status）", status)
+        }
+        if (errorPrefix == "字幕下载失败") {
+            val type = response.headers().firstValue("Content-Type").orElse("").lowercase()
+            if (type.startsWith("video/") || type.startsWith("audio/") || type.contains("json") || type.contains("html")) {
+                response.body().close()
+                throw SubtitleContentException("服务器返回的内容不是字幕")
+            }
         }
 
         val contentRange = parseContentRange(response.headers().firstValue("Content-Range").orElse(null))

@@ -86,7 +86,7 @@ $env:JAVA_HOME = "C:\Path\To\jdk-17"
 输出：
 
 ```text
-build/distributions/EmbyDownload-1.1.3-portable-win.zip
+build/distributions/EmbyDownload-1.1.4-portable-win.zip
 ```
 
 用户解压后双击 `EmbyDownload.exe` 即可。请保留整个文件夹（`app` / `runtime` / `native`），不要只拷贝单个 exe。
@@ -136,6 +136,8 @@ Windows 版 Emby Theater 的 Electron 客户端可以直接使用下载页面，
 
 支持影片、分集和音乐批量传输，以及独立保存字幕和封面。文本字幕保留 ASS、SSA、SRT、VTT 格式；内嵌 PGS 字幕导出为 SUP，其它图形字幕使用 MKS。每项任务可以暂停、继续、取消和重试。原文件下载与直接播放缓存分别使用对应服务器接口。
 
+文本字幕优先使用服务器提供的字幕链接，并兼容带起始时间的字幕接口。保存后保留同一账号、媒体版本和轨道的字幕缓存；接口返回 404 时可复用有效缓存。缓存只包含字幕，插件保存在 `electronapp/plugins/embydownload/subtitle-cache`，独立应用保存在已配置缓存目录的 `subtitles` 子目录。首次保存仍需服务器提供字幕或使用已有本地媒体提取。
+
 ```mermaid
 flowchart LR
     A[Emby 媒体详情 / 搜索] --> B[下载与字幕插件页面]
@@ -151,7 +153,7 @@ flowchart LR
 .\gradlew.bat packageTheater
 ```
 
-解压 `build/distributions/EmbyDownload-1.1.3-theater-plugin-win.zip`，关闭 Emby Theater，再在解压目录执行：
+解压 `build/distributions/EmbyDownload-1.1.4-theater-plugin-win.zip`，关闭 Emby Theater，再在解压目录执行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install\Install-TheaterPlugin.ps1 -ClientDirectory "D:\Apps\Emby Theater"

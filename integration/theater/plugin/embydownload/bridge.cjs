@@ -24,6 +24,7 @@ exports.install = function () {
         if (!fs.existsSync(java)) throw new Error('下载插件后台未安装，请重新安装完整插件包');
         fs.mkdirSync(work, { recursive: true });
         const instance = spawn(java, ['-Djava.net.useSystemProxies=true', '-Djava.io.tmpdir=' + work,
+            '-Dembydownload.subtitleCacheDir=' + path.join(__dirname, 'subtitle-cache'),
             '-m', 'com.dud.embydownload/com.dud.embydownload.LauncherKt', '--theater-service'], {
             cwd: backend, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'],
             env: Object.assign({}, process.env, { TEMP: work, TMP: work, TMPDIR: work })

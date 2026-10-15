@@ -2,6 +2,7 @@ package com.dud.embydownload.integration.theater
 
 import com.dud.embydownload.emby.EmbyApiException
 import com.dud.embydownload.emby.EmbyClient
+import com.dud.embydownload.emby.subtitle.SubtitleContentException
 import com.dud.embydownload.emby.model.BaseItemDto
 import com.dud.embydownload.emby.model.ClientIdentity
 import com.dud.embydownload.emby.model.MediaSourceInfo
@@ -524,7 +525,7 @@ object PluginService {
                 throw ex
             } catch (ex: Exception) {
                 val status = (ex as? EmbyApiException)?.statusCode
-                if (ex is SubtitleExtractionException) throw ex
+                if (ex is SubtitleExtractionException || ex is SubtitleContentException) throw ex
                 if (status != null && status in 400..499 && status != 408 && status != 429) throw ex
                 lastError = ex
                 attempt++
