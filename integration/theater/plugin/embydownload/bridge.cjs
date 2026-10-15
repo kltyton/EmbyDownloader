@@ -46,7 +46,6 @@ exports.install = function () {
         instance.on('error', () => failAll('无法启动下载后台'));
         instance.on('exit', () => {
             lines.close();
-            fs.rm(path.join(work, 'source-cache'), { recursive: true, force: true }, () => {});
             if (child === instance) child = null;
             failAll('下载后台已退出，重新打开下载页可重连');
         });

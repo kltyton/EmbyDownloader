@@ -86,7 +86,7 @@ $env:JAVA_HOME = "C:\Path\To\jdk-17"
 输出：
 
 ```text
-build/distributions/EmbyDownload-1.1.4-portable-win.zip
+build/distributions/EmbyDownload-1.1.5-portable-win.zip
 ```
 
 用户解压后双击 `EmbyDownload.exe` 即可。请保留整个文件夹（`app` / `runtime` / `native`），不要只拷贝单个 exe。
@@ -136,7 +136,9 @@ Windows 版 Emby Theater 的 Electron 客户端可以直接使用下载页面，
 
 支持影片、分集和音乐批量传输，以及独立保存字幕和封面。文本字幕保留 ASS、SSA、SRT、VTT 格式；内嵌 PGS 字幕导出为 SUP，其它图形字幕使用 MKS。每项任务可以暂停、继续、取消和重试。原文件下载与直接播放缓存分别使用对应服务器接口。
 
-文本字幕优先使用服务器提供的字幕链接，并兼容带起始时间的字幕接口。保存后保留同一账号、媒体版本和轨道的字幕缓存；接口返回 404 时可复用有效缓存。缓存只包含字幕，插件保存在 `electronapp/plugins/embydownload/subtitle-cache`，独立应用保存在已配置缓存目录的 `subtitles` 子目录。首次保存仍需服务器提供字幕或使用已有本地媒体提取。
+文本字幕优先使用服务器提供的字幕链接，并兼容带起始时间的字幕接口。接口返回 404 且没有有效字幕缓存时，自动从直接播放流提取。播放流通过内存管道送入 FFmpeg，只输出字幕，不保存或缓存视频文件。传输页显示读取播放流的进度。
+
+保存后保留同一账号、媒体版本和轨道的文本字幕缓存，后续接口不可用时可直接复用。缓存只包含字幕，插件保存在 `electronapp/plugins/embydownload/subtitle-cache`，独立应用保存在已配置缓存目录的 `subtitles` 子目录。
 
 ```mermaid
 flowchart LR
@@ -144,6 +146,8 @@ flowchart LR
     B --> C[后台下载引擎]
     C --> D[媒体文件]
     C --> E[独立字幕]
+    E --> G[字幕接口 / 字幕缓存]
+    G -->|无可用字幕| H[播放流经内存管道提取字幕]
     C --> F[封面]
 ```
 
@@ -153,7 +157,7 @@ flowchart LR
 .\gradlew.bat packageTheater
 ```
 
-解压 `build/distributions/EmbyDownload-1.1.4-theater-plugin-win.zip`，关闭 Emby Theater，再在解压目录执行：
+解压 `build/distributions/EmbyDownload-1.1.5-theater-plugin-win.zip`，关闭 Emby Theater，再在解压目录执行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install\Install-TheaterPlugin.ps1 -ClientDirectory "D:\Apps\Emby Theater"
@@ -161,7 +165,7 @@ powershell -ExecutionPolicy Bypass -File .\install\Install-TheaterPlugin.ps1 -Cl
 
 将路径替换为包含 `Emby.Theater.exe` 和 `electronapp` 的安装目录。安装器添加本地插件和后台运行时，并在 `electronapp/preload.js` 加入下载连接加载语句。客户端下载设置继续使用 `%USERPROFILE%\.embydownload\settings.json`。客户端升级覆盖插件或 preload 时，重新运行安装器即可。
 
-图形字幕提取使用本机 FFmpeg。安装器会使用 PATH 中的 `ffmpeg.exe`，也可以传入 `-FFmpegPath "D:\Tools\FFmpeg\ffmpeg.exe"`。仅下载图形字幕时，后台先缓存完整媒体流，提取完成后清理临时媒体；如已有对应媒体，可在页面填入本地文件完整路径，并只选择对应的一个条目，直接提取而不重复缓存。
+播放流和本地媒体字幕提取使用本机 FFmpeg。安装器会使用 PATH 中的 `ffmpeg.exe`，也可以传入 `-FFmpegPath "D:\Tools\FFmpeg\ffmpeg.exe"`。仅选择字幕时不会生成视频文件；如已有对应媒体，可在页面填入本地文件完整路径，并只选择对应的一个条目，直接提取而不重复读取网络播放流。
 
 ---
 

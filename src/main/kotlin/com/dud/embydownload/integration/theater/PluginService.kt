@@ -73,6 +73,9 @@ private class Task(
     @Volatile var total: Long = -1L
     @Volatile var speed: Long = 0L
     @Volatile var error: String? = null
+    @Volatile var phase: String? = null
+    @Volatile var sourceBytes: Long = 0L
+    @Volatile var sourceTotal: Long = -1L
     @Volatile var control: DownloadControl = DownloadControl()
     @Volatile var workerRunning: Boolean = false
     @Volatile var lastBytes: Long = 0L
@@ -309,7 +312,6 @@ object PluginService {
                     val mediaFileName = client.suggestFileName(leaf)
                     var mediaBase = stripExtension(mediaFileName)
                     val streams = subtitleStreams(leaf.MediaSources?.firstOrNull())
-                    val graphical = subtitles && streams.any { !isTextSubtitle(it.first) }
                     var mediaTask: Task? = null
 
                     if (media) {
@@ -326,14 +328,6 @@ object PluginService {
                         created += mediaTask
                         mediaBase = stripExtension(finalFile.fileName.toString())
                     }
-                    if (graphical && localMedia == null && mediaTask == null) {
-                        val cacheDirectory = Path.of(System.getProperty("java.io.tmpdir"), "source-cache")
-                        Files.createDirectories(cacheDirectory)
-                        mediaTask = Task(UUID.randomUUID().toString(), "${leaf.displayTitle()} · 字幕用媒体缓存", "CACHE",
-                            client, leaf, saveMode, cacheDirectory.resolve("${UUID.randomUUID()}.${leaf.Container ?: "mkv"}"))
-                        created += mediaTask
-                    }
-
                     if (subtitles) {
                         val source = leaf.MediaSources?.firstOrNull()
                         val sourceId = source?.Id
@@ -507,7 +501,6 @@ object PluginService {
             } finally {
                 task.workerRunning = false
                 dirty.set(true)
-                cleanupSourceCaches()
                 kickScheduler()
             }
         }
@@ -543,21 +536,36 @@ object PluginService {
         task.downloaded = fileSizeOr(task.partFile, 0L)
         val progress: (Long, Long?) -> Unit = { downloaded, total -> updateProgress(task, downloaded, total) }
         when (task.kind) {
-            KIND_MEDIA, "CACHE" -> task.client.downloadItem(
+            KIND_MEDIA -> task.client.downloadItem(
                 task.embyItem,
                 task.partFile,
                 task.control,
                 task.saveMode,
                 progress
             )
-            KIND_SUBTITLE -> if (task.localMedia != null || task.subtitleFormat in setOf("sup", "mks")) {
-                val input = task.localMedia ?: task.mediaDependency?.finalFile
-                    ?: throw EmbyApiException("图形字幕缺少媒体源")
-                SubtitleExtractor.extract(input, task.subtitleIndex!!, task.subtitleFormat!!, task.partFile, task.control)
-                val size = Files.size(task.partFile)
-                updateProgress(task, size, size)
-            } else task.client.downloadSubtitle(task.embyItem, task.sourceId!!, task.subtitleIndex!!,
-                task.subtitleFormat!!, task.partFile, task.control, progress)
+            KIND_SUBTITLE -> {
+                val index = task.subtitleIndex!!
+                val format = task.subtitleFormat!!
+                val codec = task.embyItem.MediaSources.orEmpty().firstOrNull { it.Id == task.sourceId }
+                    ?.MediaStreams.orEmpty().firstOrNull { it.Index == index }?.Codec
+                val localInput = task.localMedia ?: task.mediaDependency?.finalFile
+                if (localInput != null) {
+                    SubtitleExtractor.extract(localInput, index, format, task.partFile, task.control, codec)
+                    task.client.cacheExtractedSubtitle(task.embyItem, task.sourceId!!, index, format, task.partFile, task.control)
+                    val size = Files.size(task.partFile)
+                    updateProgress(task, size, size)
+                } else if (format in setOf("sup", "mks")) {
+                    extractFromPlayback(task, codec, progress)
+                } else {
+                    try {
+                        task.client.downloadSubtitle(task.embyItem, task.sourceId!!, index,
+                            format, task.partFile, task.control, progress)
+                    } catch (ex: RuntimeException) {
+                        if (ex !is SubtitleContentException && (ex !is EmbyApiException || ex.statusCode != 404)) throw ex
+                        extractFromPlayback(task, codec, progress)
+                    }
+                }
+            }
             KIND_ARTWORK -> task.client.downloadArtwork(
                 task.embyItem,
                 task.partFile,
@@ -565,6 +573,30 @@ object PluginService {
                 progress
             )
             else -> throw EmbyApiException("未知任务类型")
+        }
+    }
+
+    private fun extractFromPlayback(task: Task, codec: String?, progress: (Long, Long?) -> Unit) {
+        task.phase = "EXTRACTING"
+        task.downloaded = 0
+        task.total = -1
+        task.sourceBytes = 0
+        task.sourceTotal = -1
+        dirty.set(true)
+        try {
+            task.client.readPlaybackStream(task.embyItem, task.sourceId!!, task.control) { input, length ->
+                SubtitleExtractor.extractStream(input, length, task.subtitleIndex!!, task.subtitleFormat!!,
+                    codec, task.partFile, task.control, { bytes, total ->
+                        task.sourceBytes = bytes
+                        task.sourceTotal = total ?: -1
+                        dirty.set(true)
+                    }, progress)
+            }
+            task.client.cacheExtractedSubtitle(task.embyItem, task.sourceId!!, task.subtitleIndex!!,
+                task.subtitleFormat!!, task.partFile, task.control)
+        } finally {
+            task.phase = null
+            dirty.set(true)
         }
     }
 
@@ -588,10 +620,6 @@ object PluginService {
     }
 
     private fun requeue(task: Task) {
-        val dependency = task.mediaDependency
-        if (dependency?.kind == "CACHE" && dependency.state == STATE_COMPLETED && !Files.isRegularFile(dependency.finalFile)) {
-            requeue(dependency)
-        }
         task.control = DownloadControl()
         task.error = null
         task.state = STATE_QUEUED
@@ -599,19 +627,10 @@ object PluginService {
         task.speed = 0L
         task.lastBytes = 0L
         task.lastTimeNs = 0L
+        task.phase = null
+        task.sourceBytes = 0
+        task.sourceTotal = -1
         kickScheduler()
-    }
-
-    private fun cleanupSourceCaches() {
-        synchronized(taskLock) {
-            tasks.mapNotNull { it.mediaDependency }.filter { it.kind == "CACHE" }.distinct().forEach { cache ->
-                val dependents = tasks.filter { it.mediaDependency === cache }
-                if (cache.state == STATE_COMPLETED && dependents.all { it.state == STATE_COMPLETED || it.state == STATE_CANCELLED }) {
-                    Files.deleteIfExists(cache.finalFile)
-                    cache.error = "临时媒体缓存已清理"
-                }
-            }
-        }
     }
 
     private fun cancelTask(task: Task) {
@@ -691,6 +710,9 @@ object PluginService {
         obj.addProperty("total", task.total)
         obj.addProperty("speed", task.speed)
         obj.addProperty("error", task.error ?: "")
+        obj.addProperty("phase", task.phase)
+        obj.addProperty("sourceBytes", task.sourceBytes)
+        obj.addProperty("sourceTotal", task.sourceTotal)
         return obj
     }
 

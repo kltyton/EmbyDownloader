@@ -18,7 +18,7 @@
             <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" class="downloadMedia" checked /><span>视频 / 音频</span></label></div>
             <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" class="downloadSubtitles" checked /><span>字幕（包括内嵌图形字幕）</span></label></div>
             <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" class="downloadArtwork" /><span>封面</span></label></div>
-            <p class="fieldDescription">文本字幕保留 ASS、SSA、SRT 或 VTT；PGS 导出 SUP，其它图形字幕导出 MKS。图形字幕需读取完整媒体，未选择视频时会先缓存媒体流。</p>
+            <p class="fieldDescription">文本字幕保留 ASS、SSA、SRT 或 VTT；PGS 导出 SUP，其它图形字幕导出 MKS。字幕接口不可用时自动从播放流提取；会读取网络媒体数据，只保存字幕，不缓存视频文件。</p>
             <div class="inputContainer"><input is="emby-input" class="downloadLocalMedia" label="已有本地媒体（可选）" aria-label="已有本地媒体完整路径" placeholder="填入完整文件路径，可直接提取字幕；仅选择对应的一集" /></div>
             <div class="selectContainer"><select is="emby-select" class="downloadMode" label="媒体保存方式"><option value="PLAYBACK_CACHE">直接播放缓存</option><option value="ORIGINAL_FILE">原文件下载</option></select></div>
             <div class="inputContainer"><input is="emby-input" class="downloadDirectory" label="保存目录" aria-label="保存目录" /></div>

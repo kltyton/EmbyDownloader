@@ -322,11 +322,7 @@ class EmbyClient(
             ?: throw EmbyApiException("字幕对应的媒体源不存在，请刷新媒体列表")
         val stream = source.MediaStreams.orEmpty().firstOrNull { it.Type == "Subtitle" && it.Index == index }
             ?: throw EmbyApiException("字幕轨道不存在，请刷新媒体列表")
-        val directory = System.getProperty("embydownload.subtitleCacheDir")?.let { Path.of(it) }
-            ?: Path.of(AppSettings.stagingPath, "subtitles")
-        val cache = SubtitleFiles.cacheFile(directory, listOf(baseUrl, userId.orEmpty(), itemId,
-            mediaSourceId, source.Size.toString(), source.Path.orEmpty(), index.toString(),
-            stream.Codec.orEmpty(), resolvedFormat), resolvedFormat)
+        val cache = subtitleCacheFile(item, mediaSourceId, index, resolvedFormat)
         val root = "$baseUrl/Videos/${encode(itemId)}/${encode(mediaSourceId)}/Subtitles/$index"
         val candidates = linkedSetOf<String>()
         val deliveryUrl = stream.DeliveryUrl?.takeIf { it.isNotBlank() }
@@ -357,6 +353,52 @@ class EmbyClient(
         if (SubtitleFiles.restore(cache, targetFile, resolvedFormat, control, onProgress)) return targetFile
         if (invalidContent) throw SubtitleContentException("服务器返回的内容不是有效的 ${resolvedFormat.uppercase()} 字幕，且没有对应字幕缓存")
         throw EmbyApiException("服务器未返回此字幕（HTTP 404），且没有对应字幕缓存；可指定已有本地媒体文件导出", 404)
+    }
+
+    fun cacheExtractedSubtitle(item: BaseItemDto, sourceId: String, index: Int, format: String,
+                               file: Path, control: DownloadControl) {
+        if (format !in setOf("ass", "ssa", "srt", "vtt")) return
+        if (!SubtitleFiles.isValid(file, format)) throw SubtitleContentException("提取结果不是有效的字幕")
+        SubtitleFiles.store(file, subtitleCacheFile(item, sourceId, index, format), control)
+    }
+
+    private fun subtitleCacheFile(item: BaseItemDto, sourceId: String, index: Int, format: String): Path {
+        val source = item.MediaSources.orEmpty().firstOrNull { it.Id == sourceId }
+            ?: throw EmbyApiException("字幕媒体源不存在")
+        val stream = source.MediaStreams.orEmpty().firstOrNull { it.Type == "Subtitle" && it.Index == index }
+            ?: throw EmbyApiException("字幕轨道不存在")
+        val directory = System.getProperty("embydownload.subtitleCacheDir")?.let { Path.of(it) }
+            ?: Path.of(AppSettings.stagingPath, "subtitles")
+        return SubtitleFiles.cacheFile(directory, listOf(baseUrl, userId.orEmpty(), item.Id.orEmpty(),
+            sourceId, source.Size.toString(), source.Path.orEmpty(), index.toString(),
+            stream.Codec.orEmpty(), format), format)
+    }
+
+    fun readPlaybackStream(item: BaseItemDto, sourceId: String, control: DownloadControl,
+                           reader: (InputStream, Long?) -> Unit) {
+        control.check()
+        val selected = item.MediaSources.orEmpty().firstOrNull { it.Id == sourceId }
+            ?: throw EmbyApiException("字幕媒体源不存在")
+        val source = resolvePlaybackSource(item.copy(MediaSources = listOf(selected)))
+        val uri = DownloadHttpClients.resolveDownloadUri(source.uri.toString())
+        val headers = source.headers.toMutableMap()
+        if (sameOrigin(source.uri, URI.create(baseUrl))) {
+            accessToken?.let { headers["X-Emby-Token"] = it; headers["X-Emby-Authorization"] = authorizationHeader(it) }
+        }
+        val response = sendMediaRequest(DownloadHttpClients.downloadClient(), uri, headers, 0)
+        response.body().use { input ->
+            if (response.statusCode() !in setOf(200, 206)) {
+                throw EmbyApiException("无法读取字幕所需播放流（HTTP ${response.statusCode()}）", response.statusCode())
+            }
+            val range = parseContentRange(response.headers().firstValue("Content-Range").orElse(null))
+            if (response.statusCode() == 206 && (range == null || range.start != 0L)) {
+                throw EmbyApiException("播放流未从文件起点返回，无法提取字幕")
+            }
+            val length = if (response.statusCode() == 206) {
+                range!!.total ?: throw EmbyApiException("播放流未提供完整长度，无法确认字幕提取完成")
+            } else response.headers().firstValueAsLong("Content-Length").orElse(-1L).takeIf { it >= 0 }
+            reader(input, length)
+        }
     }
 
     private fun resolveSubtitleDeliveryUrl(itemId: String, sourceId: String, index: Int, format: String): String? {

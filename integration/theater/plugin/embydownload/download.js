@@ -95,7 +95,7 @@ define(['baseView', 'connectionManager', 'loading', 'emby-button', 'emby-input',
                 label.appendChild(element('span', '', item.title));
                 row.appendChild(label);
                 var subtitles = item.subtitles || [];
-                row.appendChild(element('p', 'fieldDescription', subtitles.length ? '字幕：' + subtitles.map(function (sub) { return sub.label + ' (' + sub.format.toUpperCase() + (sub.requiresMedia ? '，需媒体文件' : '') + ')'; }).join('、') : '无字幕轨道'));
+                row.appendChild(element('p', 'fieldDescription', subtitles.length ? '字幕：' + subtitles.map(function (sub) { return sub.label + ' (' + sub.format.toUpperCase() + (sub.requiresMedia ? '，从播放流提取' : '') + ')'; }).join('、') : '无字幕轨道'));
                 container.appendChild(row);
             });
             self.message('已加载 ' + items.length + ' 个媒体条目');
@@ -131,9 +131,10 @@ define(['baseView', 'connectionManager', 'loading', 'emby-button', 'emby-input',
                 [row.titleNode, row.statusNode, row.progressNode, row.fileNode, row.actionsNode].forEach(function (node) { row.appendChild(node); });
                 container.appendChild(row); self.rows.set(task.id, row);
             }
-            row.titleNode.textContent = task.title + ' · ' + ({ MEDIA: '媒体', SUBTITLE: '字幕', ARTWORK: '封面', CACHE: '缓存' }[task.kind] || task.kind);
-            row.statusNode.textContent = (labels[task.state] || task.state) + ' · ' + size(task.downloaded) + ' / ' + size(task.total) + ' · ' + size(task.speed || 0) + '/s' + (task.error ? ' · ' + task.error : '');
+            row.titleNode.textContent = task.title + ' · ' + ({ MEDIA: '媒体', SUBTITLE: '字幕', ARTWORK: '封面' }[task.kind] || task.kind);
+            row.statusNode.textContent = (labels[task.state] || task.state) + ' · ' + size(task.downloaded) + ' / ' + size(task.total) + ' · ' + size(task.speed || 0) + '/s' + (task.phase === 'EXTRACTING' ? ' · 从播放流提取字幕，已读取 ' + size(task.sourceBytes) + ' / ' + size(task.sourceTotal) : '') + (task.error ? ' · ' + task.error : '');
             if (task.total > 0) row.progressNode.value = Math.min(1, task.downloaded / task.total);
+            else if (task.phase === 'EXTRACTING' && task.sourceTotal > 0) row.progressNode.value = Math.min(1, task.sourceBytes / task.sourceTotal);
             else row.progressNode.removeAttribute('value');
             row.progressNode.style.width = '100%';
             row.progressNode.setAttribute('aria-label', task.title + '传输进度');
