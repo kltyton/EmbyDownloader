@@ -13,14 +13,14 @@ import java.util.concurrent.ConcurrentHashMap
 object DownloadHttpClients {
     private val cache = ConcurrentHashMap<String, HttpClient>()
 
-    fun defaultClient(): HttpClient = cache.computeIfAbsent("default") {
+    fun defaultClient(redirects: HttpClient.Redirect = HttpClient.Redirect.NORMAL): HttpClient = cache.computeIfAbsent("default:$redirects") {
         HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
-            .followRedirects(HttpClient.Redirect.NORMAL)
+            .followRedirects(redirects)
             .build()
     }
 
-    fun downloadClient(): HttpClient = clientForNode(AppSettings.proxyConfig.downloadNode())
+    fun downloadClient(): HttpClient = clientForNode(AppSettings.proxyConfig.downloadNode(), HttpClient.Redirect.NEVER)
 
     fun loginClient(): HttpClient = clientForNode(AppSettings.proxyConfig.loginNode())
 
@@ -46,7 +46,7 @@ object DownloadHttpClients {
     fun activeNodeLabel(): String? = AppSettings.proxyConfig.downloadNode()?.displayLabel()
 
     fun invalidate() {
-        cache.keys.filter { it != "default" }.forEach { cache.remove(it) }
+        cache.keys.filter { !it.startsWith("default:") }.forEach { cache.remove(it) }
     }
 
     fun shutdownEmbeddedCore() {
@@ -57,21 +57,21 @@ object DownloadHttpClients {
     fun loginTimeoutSeconds(): Long =
         if (AppSettings.proxyConfig.loginNode() != null) 120 else 30
 
-    private fun clientForNode(node: ProxyNode?): HttpClient {
-        if (node == null) return defaultClient()
+    private fun clientForNode(node: ProxyNode?, redirects: HttpClient.Redirect = HttpClient.Redirect.NORMAL): HttpClient {
+        if (node == null) return defaultClient(redirects)
         return when (node.type.lowercase()) {
-            "relay" -> defaultClient()
-            else -> cache.computeIfAbsent(cacheKey(node)) { buildProxyClient(node) }
+            "relay" -> defaultClient(redirects)
+            else -> cache.computeIfAbsent("${cacheKey(node)}|$redirects") { buildProxyClient(node, redirects) }
         }
     }
 
     private fun cacheKey(node: ProxyNode): String =
         "${node.type}|${node.host}|${node.port}|${node.username}|${node.id}|embedded=${node.requiresEmbeddedCore()}"
 
-    private fun buildProxyClient(node: ProxyNode): HttpClient {
+    private fun buildProxyClient(node: ProxyNode, redirects: HttpClient.Redirect): HttpClient {
         val (host, port) = resolveProxyEndpoint(node)
         val proxyType = when {
-            node.requiresEmbeddedCore() -> Proxy.Type.SOCKS
+            node.requiresEmbeddedCore() -> Proxy.Type.HTTP
             node.type.lowercase() in setOf("socks", "socks5") -> Proxy.Type.SOCKS
             else -> Proxy.Type.HTTP
         }
@@ -93,7 +93,7 @@ object DownloadHttpClients {
 
         return HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
-            .followRedirects(HttpClient.Redirect.NORMAL)
+            .followRedirects(redirects)
             .proxy(selector)
             .build()
     }

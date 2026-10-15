@@ -44,6 +44,7 @@ data class SettingsData(
     var maxConcurrentDownloads: Int = 2,
     var episodeFileNameIncludeSeries: Boolean = false,
     var darkMode: Boolean = false,
+    var mediaSaveMode: MediaSaveMode = MediaSaveMode.ORIGINAL_FILE,
     var savedAccounts: MutableList<SavedAccount> = mutableListOf(),
     var proxy: ProxyConfig? = ProxyConfig()
 ) {
@@ -113,6 +114,13 @@ object AppSettings {
         get() = cache.darkMode
         set(value) {
             cache.darkMode = value
+            save()
+        }
+
+    var mediaSaveMode: MediaSaveMode
+        get() = cache.mediaSaveMode
+        set(value) {
+            cache.mediaSaveMode = value
             save()
         }
 

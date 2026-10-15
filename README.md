@@ -86,7 +86,7 @@ $env:JAVA_HOME = "C:\Path\To\jdk-17"
 输出：
 
 ```text
-build/distributions/EmbyDownload-1.0.0-portable-win.zip
+build/distributions/EmbyDownload-1.1.3-portable-win.zip
 ```
 
 用户解压后双击 `EmbyDownload.exe` 即可。请保留整个文件夹（`app` / `runtime` / `native`），不要只拷贝单个 exe。
@@ -127,6 +127,39 @@ build/distributions/EmbyDownload-1.0.0-portable-win.zip
 
 - 下载到 NAS 且开启本地缓存时：文件先落到「本地缓存目录」，完成后再移动到你设置的下载目录
 - 清除本机配置可删除 `%USERPROFILE%\.embydownload\`（并视需要清理 Preferences 与 staging 目录）
+
+---
+
+## Emby Theater 插件
+
+Windows 版 Emby Theater 的 Electron 客户端可以直接使用下载页面，入口位于顶部下载按钮、媒体详情页和播放设置中的「下载与字幕」。后台复用下载引擎，不打开单独的下载器窗口，登录使用客户端当前会话。
+
+支持影片、分集和音乐批量传输，以及独立保存字幕和封面。文本字幕保留 ASS、SSA、SRT、VTT 格式；内嵌 PGS 字幕导出为 SUP，其它图形字幕使用 MKS。每项任务可以暂停、继续、取消和重试。原文件下载与直接播放缓存分别使用对应服务器接口。
+
+```mermaid
+flowchart LR
+    A[Emby 媒体详情 / 搜索] --> B[下载与字幕插件页面]
+    B --> C[后台下载引擎]
+    C --> D[媒体文件]
+    C --> E[独立字幕]
+    C --> F[封面]
+```
+
+构建插件包：
+
+```powershell
+.\gradlew.bat packageTheater
+```
+
+解压 `build/distributions/EmbyDownload-1.1.3-theater-plugin-win.zip`，关闭 Emby Theater，再在解压目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install\Install-TheaterPlugin.ps1 -ClientDirectory "D:\Apps\Emby Theater"
+```
+
+将路径替换为包含 `Emby.Theater.exe` 和 `electronapp` 的安装目录。安装器添加本地插件和后台运行时，并在 `electronapp/preload.js` 加入下载连接加载语句。客户端下载设置继续使用 `%USERPROFILE%\.embydownload\settings.json`。客户端升级覆盖插件或 preload 时，重新运行安装器即可。
+
+图形字幕提取使用本机 FFmpeg。安装器会使用 PATH 中的 `ffmpeg.exe`，也可以传入 `-FFmpegPath "D:\Tools\FFmpeg\ffmpeg.exe"`。仅下载图形字幕时，后台先缓存完整媒体流，提取完成后清理临时媒体；如已有对应媒体，可在页面填入本地文件完整路径，并只选择对应的一个条目，直接提取而不重复缓存。
 
 ---
 

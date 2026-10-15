@@ -6,6 +6,7 @@ import com.dud.embydownload.emby.EmbyClient
 import com.dud.embydownload.emby.model.BaseItemDto
 import com.dud.embydownload.emby.model.DownloadPhase
 import com.dud.embydownload.settings.AppSettings
+import com.dud.embydownload.settings.MediaSaveMode
 import javafx.application.Platform
 import javafx.beans.property.ObjectProperty
 import javafx.beans.property.SimpleLongProperty
@@ -26,7 +27,8 @@ enum class TransferItemState {
 class TransferItem(
     val id: String = UUID.randomUUID().toString(),
     val embyItem: BaseItemDto,
-    val directory: Path
+    val directory: Path,
+    val saveMode: MediaSaveMode = AppSettings.mediaSaveMode
 ) {
     val displayName: String = embyItem.displayTitle()
     val stateProperty: ObjectProperty<TransferItemState> = SimpleObjectProperty(TransferItemState.QUEUED)
@@ -313,6 +315,7 @@ object TransferSession {
             } catch (ex: DownloadCancelledException) {
                 throw ex
             } catch (ex: Exception) {
+                if (ex is EmbyApiException && ex.statusCode == 403) throw ex
                 lastError = ex
                 attempt++
                 if (attempt > MAX_AUTO_RETRIES || item.control.isCancelled) break
@@ -363,6 +366,7 @@ object TransferSession {
             item = item.embyItem,
             targetFile = writeTarget,
             control = item.control,
+            saveMode = item.saveMode,
             onProgress = { downloaded, total ->
                 emit(downloaded, total, DownloadPhase.DOWNLOADING)
             }

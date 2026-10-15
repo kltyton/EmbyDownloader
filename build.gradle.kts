@@ -11,7 +11,7 @@ group = "com.dud"
 version = "1.0-SNAPSHOT"
 
 // jpackage 安装包版本（不能用 SNAPSHOT）
-val appReleaseVersion = "1.0.1"
+val appReleaseVersion = "1.1.3"
 
 repositories {
     mavenCentral()
@@ -26,6 +26,7 @@ tasks.withType<JavaCompile> {
 application {
     mainModule.set("com.dud.embydownload")
     mainClass.set("com.dud.embydownload.LauncherKt")
+    applicationDefaultJvmArgs = listOf("-Djava.net.useSystemProxies=true")
 }
 
 kotlin {
@@ -135,4 +136,16 @@ tasks.register<Zip>("packagePortable") {
     archiveFileName.set("EmbyDownload-$appReleaseVersion-portable-win.zip")
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
     from(layout.buildDirectory.dir("jpackage-out/EmbyDownload"))
+}
+
+tasks.register<Zip>("packageTheater") {
+    group = "distribution"
+    description = "打包 Emby Theater 插件与后台运行时"
+    dependsOn("jpackageImage")
+    archiveFileName.set("EmbyDownload-$appReleaseVersion-theater-plugin-win.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    from("integration/theater/plugin") { into("plugin") }
+    from("integration/theater/install") { into("install") }
+    from(layout.buildDirectory.dir("jpackage-out/EmbyDownload")) { into("backend") }
+    from("LICENSE")
 }

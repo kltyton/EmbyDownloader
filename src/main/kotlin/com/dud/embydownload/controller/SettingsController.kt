@@ -2,6 +2,7 @@ package com.dud.embydownload.controller
 
 import com.dud.embydownload.settings.AppSettings
 import com.dud.embydownload.settings.SettingsData
+import com.dud.embydownload.settings.MediaSaveMode
 import com.dud.embydownload.transfer.DownloadStaging
 import com.dud.embydownload.transfer.TransferSession
 import com.dud.embydownload.ui.AppShell
@@ -36,6 +37,12 @@ class SettingsController {
     private lateinit var concurrentCombo: ComboBox<Int>
 
     @FXML
+    private lateinit var saveModeCombo: ComboBox<MediaSaveMode>
+
+    @FXML
+    private lateinit var saveModeHint: Label
+
+    @FXML
     private lateinit var episodeSeriesNameCheck: CheckBox
 
     @FXML
@@ -52,6 +59,7 @@ class SettingsController {
 
     private var returnTarget: ReturnTarget = ReturnTarget.HOME
     private var suppressingConcurrentChange = false
+    private var suppressingSaveModeChange = false
 
     fun setReturnTarget(target: ReturnTarget) {
         returnTarget = target
@@ -64,6 +72,11 @@ class SettingsController {
         stagingPathField.text = AppSettings.stagingPath
         updateStagingControls()
         setupConcurrentCombo()
+        suppressingSaveModeChange = true
+        saveModeCombo.items = FXCollections.observableArrayList(MediaSaveMode.entries)
+        saveModeCombo.value = AppSettings.mediaSaveMode
+        suppressingSaveModeChange = false
+        refreshSaveModeHint()
         episodeSeriesNameCheck.isSelected = AppSettings.episodeFileNameIncludeSeries
         darkModeCheck.isSelected = AppSettings.darkMode
         refreshAccountsHint()
@@ -77,6 +90,20 @@ class SettingsController {
         )
         concurrentCombo.value = AppSettings.maxConcurrentDownloads
         suppressingConcurrentChange = false
+    }
+
+    @FXML
+    private fun onSaveModeChanged() {
+        if (suppressingSaveModeChange) return
+        AppSettings.mediaSaveMode = saveModeCombo.value ?: return
+        refreshSaveModeHint()
+    }
+
+    private fun refreshSaveModeHint() {
+        saveModeHint.text = when (saveModeCombo.value) {
+            MediaSaveMode.PLAYBACK_CACHE -> "保存服务器允许直接播放的完整媒体流，保留播放源格式；不使用原文件下载接口。"
+            else -> "使用服务器原文件下载接口，需要账号拥有媒体下载权限。"
+        }
     }
 
     @FXML

@@ -33,6 +33,7 @@ data class BaseItemDto(
     val Container: String? = null,
     val Path: String? = null,
     val MediaSources: List<MediaSourceInfo>? = null,
+    val MediaStreams: List<MediaStreamInfo>? = null,
     val CanDownload: Boolean? = null,
     val ImageTags: Map<String, String>? = null,
     val SeriesId: String? = null,
@@ -84,9 +85,29 @@ data class BaseItemDto(
 data class MediaSourceInfo(
     val Id: String? = null,
     val Path: String? = null,
+    val Protocol: String? = null,
     val Container: String? = null,
     val Size: Long? = null,
-    val Name: String? = null
+    val Name: String? = null,
+    val SupportsDirectPlay: Boolean = false,
+    val SupportsDirectStream: Boolean = false,
+    val IsInfiniteStream: Boolean = false,
+    val RequiresOpening: Boolean = false,
+    val DirectStreamUrl: String? = null,
+    val AddApiKeyToDirectStreamUrl: Boolean = false,
+    val RequiredHttpHeaders: Map<String, String>? = null,
+    val MediaStreams: List<MediaStreamInfo>? = null
+)
+
+data class MediaStreamInfo(
+    val Index: Int? = null,
+    val Type: String? = null,
+    val Codec: String? = null,
+    val Language: String? = null,
+    val DisplayTitle: String? = null,
+    val IsExternal: Boolean? = null,
+    val IsTextSubtitleStream: Boolean? = null,
+    val DeliveryUrl: String? = null
 )
 
 enum class SearchMediaType(val label: String, val includeItemTypes: String) {

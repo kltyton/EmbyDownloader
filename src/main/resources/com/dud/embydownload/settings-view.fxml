@@ -25,6 +25,11 @@
             <VBox spacing="18" styleClass="page-scroll-content">
                 <VBox spacing="14" styleClass="surface-card">
                     <Label text="下载" styleClass="settings-section-title"/>
+                    <HBox spacing="12" alignment="CENTER_LEFT" styleClass="switch-row">
+                        <Label text="保存方式" styleClass="item-title" HBox.hgrow="ALWAYS"/>
+                        <ComboBox fx:id="saveModeCombo" prefWidth="200" onAction="#onSaveModeChanged"/>
+                    </HBox>
+                    <Label fx:id="saveModeHint" wrapText="true" styleClass="meta-label"/>
                     <Label text="默认下载目录" styleClass="field-label"/>
                     <HBox spacing="12" alignment="CENTER_LEFT">
                         <TextField fx:id="downloadPathField" editable="false" HBox.hgrow="ALWAYS"/>

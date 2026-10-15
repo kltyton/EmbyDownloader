@@ -14,6 +14,7 @@ module com.dud.embydownload {
     opens com.dud.embydownload.controller to javafx.fxml;
     opens com.dud.embydownload.emby.model to com.google.gson;
     opens com.dud.embydownload.settings to com.google.gson;
+    opens com.dud.embydownload.integration.theater to com.google.gson;
 
     exports com.dud.embydownload;
     exports com.dud.embydownload.ui;

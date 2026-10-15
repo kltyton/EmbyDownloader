@@ -1,0 +1,36 @@
+<div is="emby-scroller" class="view flex flex-direction-column scrollFrameY flex-grow" data-mousewheel="true" data-horizontal="false" data-forcescrollbar="true" data-bindheader="true">
+    <div class="scrollSlider flex-grow flex-direction-column padded-left padded-left-page padded-right padded-top-page padded-bottom-page settingsContainer">
+        <form class="auto-center downloadSearch">
+            <h2>下载与字幕</h2>
+            <p class="fieldDescription">使用当前 Emby 账号。选择影片、音乐或分集后，可分别保存媒体、字幕和封面。</p>
+            <div class="inputContainer"><input is="emby-input" class="downloadTerm" label="搜索媒体" aria-label="搜索媒体" placeholder="影片、剧集或音乐名称" /></div>
+            <div class="selectContainer"><select is="emby-select" class="downloadType" label="媒体类型"><option value="MOVIE">影片 / 剧集</option><option value="MUSIC">音乐 / 专辑</option></select></div>
+            <button is="emby-button" type="submit" class="raised button-submit downloadSearchButton">搜索</button>
+            <div class="downloadResults"></div>
+        </form>
+        <section class="auto-center">
+            <h2>选择下载内容</h2>
+            <div class="flex flex-wrap-wrap">
+                <button is="emby-button" type="button" class="raised downloadSelectAll">全选</button>
+                <button is="emby-button" type="button" class="raised downloadSelectNone">全不选</button>
+            </div>
+            <div class="downloadSelection"><p class="fieldDescription">从媒体详情页点击下载，或在上方搜索。</p></div>
+            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" class="downloadMedia" checked /><span>视频 / 音频</span></label></div>
+            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" class="downloadSubtitles" checked /><span>字幕（包括内嵌图形字幕）</span></label></div>
+            <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" class="downloadArtwork" /><span>封面</span></label></div>
+            <p class="fieldDescription">文本字幕保留 ASS、SSA、SRT 或 VTT；PGS 导出 SUP，其它图形字幕导出 MKS。图形字幕需读取完整媒体，未选择视频时会先缓存媒体流。</p>
+            <div class="inputContainer"><input is="emby-input" class="downloadLocalMedia" label="已有本地媒体（可选）" aria-label="已有本地媒体完整路径" placeholder="填入完整文件路径，可直接提取字幕；仅选择对应的一集" /></div>
+            <div class="selectContainer"><select is="emby-select" class="downloadMode" label="媒体保存方式"><option value="PLAYBACK_CACHE">直接播放缓存</option><option value="ORIGINAL_FILE">原文件下载</option></select></div>
+            <div class="inputContainer"><input is="emby-input" class="downloadDirectory" label="保存目录" aria-label="保存目录" /></div>
+            <div class="selectContainer"><select is="emby-select" class="downloadConcurrent" label="同时传输数"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+            <button is="emby-button" type="button" class="raised downloadSaveSettings">保存设置</button>
+            <button is="emby-button" type="button" class="raised button-submit downloadEnqueue">加入下载队列</button>
+            <p class="downloadMessage fieldDescription" role="status" aria-live="polite"></p>
+        </section>
+        <section class="auto-center">
+            <h2>传输队列</h2>
+            <button is="emby-button" type="button" class="raised downloadClear">清除已完成记录</button>
+            <div class="downloadTasks"><p class="fieldDescription">暂无任务</p></div>
+        </section>
+    </div>
+</div>

@@ -1,13 +1,16 @@
 package com.dud.embydownload.emby
 
 import com.dud.embydownload.emby.model.AuthenticationResult
+import com.dud.embydownload.emby.model.ClientIdentity
 import com.dud.embydownload.emby.model.BaseItemDto
 import com.dud.embydownload.emby.model.DownloadPhase
 import com.dud.embydownload.emby.model.DownloadProgress
 import com.dud.embydownload.emby.model.QueryResult
+import com.dud.embydownload.emby.model.PlaybackInfoResponse
 import com.dud.embydownload.emby.model.SearchMediaType
 import com.dud.embydownload.proxy.DownloadHttpClients
 import com.dud.embydownload.settings.AppSettings
+import com.dud.embydownload.settings.MediaSaveMode
 import com.dud.embydownload.transfer.DownloadCancelledException
 import com.dud.embydownload.transfer.DownloadControl
 import com.dud.embydownload.transfer.DownloadStaging
@@ -15,25 +18,27 @@ import com.google.gson.Gson
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
+import java.net.http.HttpHeaders
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.time.Duration
-import java.util.UUID
 
 class EmbyClient(
     baseUrl: String,
     private val accessToken: String? = null,
-    private val userId: String? = null
+    private val userId: String? = null,
+    private val identity: ClientIdentity = ClientIdentity()
 ) {
     private val baseUrl = normalizeBaseUrl(baseUrl)
     private val gson = Gson()
-    private val httpClient: HttpClient = DownloadHttpClients.defaultClient()
+    private val httpClient: HttpClient
+        get() = DownloadHttpClients.searchClient()
 
-    private val deviceId: String = UUID.nameUUIDFromBytes("EmbyDownload-PC".toByteArray()).toString()
 
     fun authenticate(username: String, password: String): AuthenticationResult {
         val body = gson.toJson(
@@ -58,9 +63,22 @@ class EmbyClient(
             .build()
 
         val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+        val viaProxy = loginNode?.displayLabel()?.let { "（代理：$it）" } ?: ""
+        if (isCloudflareBlocked(response.headers(), response.body())) {
+            throw EmbyApiException(
+                "登录请求被 Cloudflare 拦截（HTTP ${response.statusCode()}）$viaProxy：" +
+                    "请联系服务器管理员确认此客户端的 API 访问规则"
+            )
+        }
         if (response.statusCode() !in 200..299) {
-            val viaProxy = loginNode?.displayLabel()?.let { "（代理：$it）" } ?: ""
-            throw EmbyApiException("登录失败（HTTP ${response.statusCode()}）$viaProxy：请检查地址、用户名或密码")
+            val reason = when (response.statusCode()) {
+                401 -> "身份验证未通过，请检查用户名或密码"
+                403 -> "服务器拒绝此客户端或账号访问，请检查服务端访问策略"
+                404 -> "找不到登录接口，请检查服务器地址及 API 路径"
+                429 -> "请求过于频繁，请稍后再试"
+                else -> "服务器未能完成登录请求"
+            }
+            throw EmbyApiException("登录失败（HTTP ${response.statusCode()}）$viaProxy：$reason")
         }
 
         val result = gson.fromJson(response.body(), AuthenticationResult::class.java)
@@ -89,6 +107,15 @@ class EmbyClient(
         val uri = DownloadHttpClients.resolveApiUri(originalUrl, searchNode)
         val request = authorizedGet(uri.toString())
         return parseItems(request, "搜索失败", client)
+    }
+
+    fun getItem(itemId: String): BaseItemDto {
+        requireNotNull(accessToken) { "未登录" }
+        requireNotNull(userId) { "未登录" }
+        val query = "UserId=${encode(userId)}&Fields=${encode(DETAIL_FIELDS)}"
+        val original = "$baseUrl/Users/$userId/Items/$itemId?$query"
+        val uri = DownloadHttpClients.resolveApiUri(original, AppSettings.proxyConfig.searchNode())
+        return parseItem(authorizedGet(uri.toString()), "加载媒体详情失败")
     }
 
     /**
@@ -180,38 +207,54 @@ class EmbyClient(
         item: BaseItemDto,
         targetFile: Path,
         control: DownloadControl? = null,
+        saveMode: MediaSaveMode = AppSettings.mediaSaveMode,
         onProgress: ((downloadedBytes: Long, totalBytes: Long?) -> Unit)? = null
     ): Path {
         requireNotNull(accessToken) { "未登录" }
         val itemId = item.Id ?: throw EmbyApiException("资源缺少 ID，无法下载")
         control?.check()
+        if (saveMode == MediaSaveMode.ORIGINAL_FILE && item.CanDownload == false) {
+            throw EmbyApiException("服务器未允许下载此项目，请确认账号下载权限", 403)
+        }
 
         Files.createDirectories(targetFile.parent)
         val existingBytes = runCatching {
             if (Files.isRegularFile(targetFile)) Files.size(targetFile) else 0L
         }.getOrDefault(0L).coerceAtLeast(0L)
 
-        val originalUrl = "$baseUrl/Items/$itemId/Download"
-        val downloadUri = DownloadHttpClients.resolveDownloadUri(originalUrl)
-        val downloadClient = DownloadHttpClients.downloadClient()
-
-        val requestBuilder = HttpRequest.newBuilder()
-            .uri(downloadUri)
-            .timeout(Duration.ofMinutes(60))
-            .GET()
-
-        requestBuilder.header("X-Emby-Token", accessToken)
-        requestBuilder.header("X-Emby-Authorization", authorizationHeader(accessToken))
-        if (existingBytes > 0L) {
-            requestBuilder.header("Range", "bytes=$existingBytes-")
+        val source = if (saveMode == MediaSaveMode.PLAYBACK_CACHE) {
+            resolvePlaybackSource(item)
+        } else {
+            MediaRequest(URI.create("$baseUrl/Items/$itemId/Download?api_key=${encode(accessToken)}"), emptyMap())
         }
-
-        val response = downloadClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofInputStream())
+        val downloadUri = DownloadHttpClients.resolveDownloadUri(source.uri.toString())
+        val downloadClient = DownloadHttpClients.downloadClient()
+        val response = sendMediaRequest(downloadClient, downloadUri, source.headers, existingBytes)
         val status = response.statusCode()
         if (status !in 200..299) {
-            throw EmbyApiException("下载失败（HTTP $status）")
+            val errorBody = response.body().use {
+                String(it.readNBytes(16 * 1024), StandardCharsets.UTF_8)
+            }
+            val fromFileServer = !response.uri().host.equals(downloadUri.host, ignoreCase = true)
+            val reason = when {
+                isCloudflareBlocked(response.headers(), errorBody) ->
+                    "下载请求被 Cloudflare 拦截，请检查网络出口或联系站点管理员"
+                status == 401 -> "下载鉴权失败或登录已过期，请重新登录"
+                status == 403 && fromFileServer ->
+                    "文件服务器拒绝访问此下载链接，请检查资源链接的访问规则"
+                status == 403 -> "服务器拒绝下载，请确认账号下载权限及此资源的访问规则"
+                status == 404 -> "资源不存在或下载接口不可用"
+                else -> "服务器未能提供下载文件"
+            }
+            val source = if (fromFileServer) "（文件服务器）" else ""
+            throw EmbyApiException("下载失败（HTTP $status）$source：$reason", status)
         }
 
+        val contentRange = parseContentRange(response.headers().firstValue("Content-Range").orElse(null))
+        if (status == 206 && (contentRange == null || contentRange.start != existingBytes)) {
+            response.body().close()
+            throw EmbyApiException("服务器返回的续传范围不匹配，已保留本地文件")
+        }
         val append = status == 206 && existingBytes > 0L
         if (!append && existingBytes > 0L) {
             // 服务器不支持断点续传，重新下完整文件
@@ -221,8 +264,7 @@ class EmbyClient(
         val totalFromItem = item.MediaSources?.firstOrNull()?.Size?.takeIf { it > 0 }
         val contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L)
             .takeIf { it > 0 }
-        val contentRange = response.headers().firstValue("Content-Range").orElse(null)
-        val totalBytes = parseContentRangeTotal(contentRange)
+        val totalBytes = contentRange?.total
             ?: if (append && contentLength != null) existingBytes + contentLength else contentLength
             ?: totalFromItem
 
@@ -254,19 +296,249 @@ class EmbyClient(
             runCatching { Files.deleteIfExists(targetFile) }
             throw ex
         }
+        if (totalBytes != null && downloaded != totalBytes) {
+            throw EmbyApiException("媒体传输未完成，已保存 $downloaded / $totalBytes 字节，可继续续传")
+        }
         // 其他异常保留本地半成品，供断点续传 / 自动重连
         return targetFile
     }
 
-    private fun parseContentRangeTotal(header: String?): Long? {
-        if (header.isNullOrBlank()) return null
-        // 例：bytes 1000-9999/12345
-        val slash = header.lastIndexOf('/')
-        if (slash < 0 || slash == header.lastIndex) return null
-        val totalPart = header.substring(slash + 1).trim()
-        if (totalPart == "*") return null
-        return totalPart.toLongOrNull()?.takeIf { it > 0 }
+    fun downloadSubtitle(
+        item: BaseItemDto,
+        sourceId: String,
+        index: Int,
+        format: String,
+        targetFile: Path,
+        control: DownloadControl,
+        onProgress: (Long, Long?) -> Unit
+    ): Path {
+        val itemId = item.Id ?: throw EmbyApiException("资源缺少 ID，无法导出字幕")
+        val mediaSourceId = sourceId.takeIf { it.isNotBlank() }
+            ?: throw EmbyApiException("缺少媒体源，无法导出字幕")
+        val resolvedFormat = normalizeSubtitleFormat(format)
+        val url = "$baseUrl/Videos/${encode(itemId)}/${encode(mediaSourceId)}/Subtitles/$index/Stream.$resolvedFormat"
+        return downloadBinary(url, targetFile, control, "字幕下载失败", onProgress)
     }
+
+    fun downloadArtwork(
+        item: BaseItemDto,
+        targetFile: Path,
+        control: DownloadControl,
+        onProgress: (Long, Long?) -> Unit
+    ): Path {
+        val target = resolveArtworkTarget(item)
+            ?: throw EmbyApiException("此项目没有可导出的封面")
+        val url = buildString {
+            append("$baseUrl/Items/${encode(target.first)}/Images/Primary?maxHeight=1080&quality=90")
+            target.second?.takeIf { it.isNotBlank() }?.let { append("&tag=${encode(it)}") }
+        }
+        return downloadBinary(url, targetFile, control, "封面下载失败", onProgress)
+    }
+
+    private fun downloadBinary(
+        originalUrl: String,
+        targetFile: Path,
+        control: DownloadControl,
+        errorPrefix: String,
+        onProgress: ((Long, Long?) -> Unit)?
+    ): Path {
+        control.check()
+        val token = accessToken ?: throw EmbyApiException("未登录")
+        val node = AppSettings.proxyConfig.downloadNode()
+        val client = DownloadHttpClients.downloadClient()
+        val uri = DownloadHttpClients.resolveApiUri(originalUrl, node)
+
+        Files.createDirectories(targetFile.parent)
+        val existingBytes = runCatching {
+            if (Files.isRegularFile(targetFile)) Files.size(targetFile) else 0L
+        }.getOrDefault(0L).coerceAtLeast(0L)
+
+        val response = sendMediaRequest(client, uri, mapOf(
+            "X-Emby-Token" to token,
+            "X-Emby-Authorization" to authorizationHeader(token)
+        ), existingBytes)
+        val status = response.statusCode()
+        if (status !in 200..299) {
+            response.body().close()
+            if (status == 404 && errorPrefix == "字幕下载失败") {
+                throw EmbyApiException("服务器未返回此字幕（HTTP 404），可指定已有本地媒体文件导出", status)
+            }
+            throw EmbyApiException("$errorPrefix（HTTP $status）", status)
+        }
+
+        val contentRange = parseContentRange(response.headers().firstValue("Content-Range").orElse(null))
+        if (status == 206 && (contentRange == null || contentRange.start != existingBytes)) {
+            response.body().close()
+            throw EmbyApiException("$errorPrefix：服务器返回的续传范围不匹配，已保留本地文件")
+        }
+        val append = status == 206 && existingBytes > 0L
+        if (!append && existingBytes > 0L) {
+            runCatching { Files.deleteIfExists(targetFile) }
+        }
+
+        val contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1L)
+            .takeIf { it > 0 }
+        val totalBytes = contentRange?.total
+            ?: if (append && contentLength != null) existingBytes + contentLength else contentLength
+
+        var downloaded = if (append) existingBytes else 0L
+        onProgress?.invoke(downloaded, totalBytes)
+
+        val openOptions = if (append) {
+            arrayOf(StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)
+        } else {
+            arrayOf(StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)
+        }
+
+        try {
+            response.body().use { input ->
+                Files.newOutputStream(targetFile, *openOptions).buffered(256 * 1024).use { output ->
+                    val buffer = ByteArray(256 * 1024)
+                    while (true) {
+                        control.check()
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        onProgress?.invoke(downloaded, totalBytes)
+                    }
+                }
+            }
+        } catch (ex: DownloadCancelledException) {
+            runCatching { Files.deleteIfExists(targetFile) }
+            throw ex
+        }
+        if (totalBytes != null && downloaded != totalBytes) {
+            throw EmbyApiException("$errorPrefix：内容传输未完成，已保存 $downloaded / $totalBytes 字节，可继续续传")
+        }
+        return targetFile
+    }
+
+    private fun normalizeSubtitleFormat(format: String): String =
+        when (format.trim().lowercase()) {
+            "ass" -> "ass"
+            "ssa" -> "ssa"
+            "vtt", "webvtt" -> "vtt"
+            "srt", "subrip" -> "srt"
+            else -> "srt"
+        }
+
+    private fun resolveArtworkTarget(item: BaseItemDto): Pair<String, String?>? {
+        val primaryTag = item.ImageTags?.get("Primary")
+        if (!item.Id.isNullOrBlank() && !primaryTag.isNullOrBlank()) {
+            return item.Id to primaryTag
+        }
+        if (!item.SeriesPrimaryImageTag.isNullOrBlank() && !item.SeriesId.isNullOrBlank()) {
+            return item.SeriesId to item.SeriesPrimaryImageTag
+        }
+        if (!item.AlbumPrimaryImageTag.isNullOrBlank() && !item.AlbumId.isNullOrBlank()) {
+            return item.AlbumId to item.AlbumPrimaryImageTag
+        }
+        return null
+    }
+
+    private data class MediaRange(val start: Long, val end: Long, val total: Long?)
+
+    private fun parseContentRange(header: String?): MediaRange? {
+        val match = Regex("bytes\\s+(\\d+)-(\\d+)/(\\d+|\\*)", RegexOption.IGNORE_CASE)
+            .matchEntire(header?.trim() ?: return null) ?: return null
+        val start = match.groupValues[1].toLongOrNull() ?: return null
+        val end = match.groupValues[2].toLongOrNull() ?: return null
+        val total = if (match.groupValues[3] == "*") null else match.groupValues[3].toLongOrNull() ?: return null
+        if (end < start || (total != null && end >= total)) return null
+        return MediaRange(start, end, total)
+    }
+
+    private data class MediaRequest(val uri: URI, val headers: Map<String, String>)
+
+    private fun resolvePlaybackSource(item: BaseItemDto): MediaRequest {
+        val actor = userId ?: throw EmbyApiException("未登录")
+        val id = item.Id ?: throw EmbyApiException("资源缺少 ID")
+        val preferred = item.MediaSources?.firstOrNull()?.Id
+        val original = buildString {
+            append("$baseUrl/Items/$id/PlaybackInfo?UserId=${encode(actor)}")
+            append("&IsPlayback=true&StartTimeTicks=0&AutoOpenLiveStream=false")
+            append("&EnableDirectPlay=true&EnableDirectStream=true&EnableTranscoding=false&DirectPlayProtocols=Http")
+            preferred?.let { append("&MediaSourceId=${encode(it)}") }
+        }
+        val uri = DownloadHttpClients.resolveApiUri(original, AppSettings.proxyConfig.searchNode())
+        val body = gson.toJson(mapOf("DeviceProfile" to mapOf(
+            "Name" to "Emby Download",
+            "SupportedMediaTypes" to "Audio,Video",
+            "DirectPlayProfiles" to listOf(mapOf("Type" to "Video"), mapOf("Type" to "Audio")),
+            "TranscodingProfiles" to emptyList<Any>()
+        )))
+        val request = HttpRequest.newBuilder(authorizedGet(uri.toString())) { _, _ -> true }
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build()
+        val response = DownloadHttpClients.searchClient().send(request, HttpResponse.BodyHandlers.ofString())
+        if (response.statusCode() !in 200..299) {
+            throw EmbyApiException("无法取得播放源（HTTP ${response.statusCode()}）", response.statusCode())
+        }
+        val info = gson.fromJson(response.body(), PlaybackInfoResponse::class.java)
+        if (info.ErrorCode != null) throw EmbyApiException("服务器未允许取得可缓存的播放源")
+        val sources = info.MediaSources.orEmpty()
+        val source = if (preferred == null) sources.firstOrNull() else sources.firstOrNull { it.Id == preferred }
+        source ?: throw EmbyApiException("服务器未返回匹配的播放源，请刷新媒体列表")
+        val directPath = source.Path?.takeIf {
+            !source.SupportsDirectStream && source.SupportsDirectPlay && source.Protocol.equals("Http", ignoreCase = true) && it.isNotBlank()
+        }
+        if (source.IsInfiniteStream || source.RequiresOpening || (directPath == null && !source.SupportsDirectStream)) {
+            throw EmbyApiException("此资源未提供直接播放媒体流，无法使用直接播放缓存")
+        }
+        val sourceId = source.Id ?: throw EmbyApiException("播放源缺少媒体版本 ID")
+        val session = info.PlaySessionId ?: throw EmbyApiException("服务器未返回播放会话")
+        val url = directPath ?: source.DirectStreamUrl?.takeIf { it.isNotBlank() }
+            ?: "$baseUrl/${if (item.Type == "Audio") "Audio" else "Videos"}/$id/stream?static=true&MediaSourceId=${encode(sourceId)}&PlaySessionId=${encode(session)}&api_key=${encode(accessToken!!)}"
+        var streamUri = URI.create("$baseUrl/").resolve(url)
+        if (streamUri.scheme !in setOf("http", "https") || streamUri.host.isNullOrBlank()) throw EmbyApiException("播放源不是 HTTP 媒体地址")
+        if (directPath == null) {
+            if (!Regex("(?:^|&)PlaySessionId=", RegexOption.IGNORE_CASE).containsMatchIn(streamUri.rawQuery.orEmpty())) {
+                streamUri = appendQueryParameter(streamUri, "PlaySessionId", session)
+            }
+            if (source.AddApiKeyToDirectStreamUrl && !Regex("(?:^|&)api_key=", RegexOption.IGNORE_CASE).containsMatchIn(streamUri.rawQuery.orEmpty())) {
+                streamUri = appendQueryParameter(streamUri, "api_key", accessToken!!)
+            }
+        }
+        return MediaRequest(streamUri, source.RequiredHttpHeaders.orEmpty())
+    }
+
+    private fun appendQueryParameter(uri: URI, name: String, value: String): URI {
+        val address = uri.toString().substringBefore('#')
+        return URI.create("$address${if (uri.rawQuery == null) "?" else "&"}${encode(name)}=${encode(value)}")
+    }
+
+    private fun sameOrigin(first: URI, second: URI): Boolean {
+        fun port(uri: URI) = if (uri.port >= 0) uri.port else if (uri.scheme.equals("https", true)) 443 else 80
+        return first.scheme.equals(second.scheme, true) && first.host.equals(second.host, true) && port(first) == port(second)
+    }
+
+    private fun sendMediaRequest(client: HttpClient, original: URI, headers: Map<String, String>, offset: Long): HttpResponse<InputStream> {
+        var uri = original
+        repeat(6) { hop ->
+            val builder = HttpRequest.newBuilder(uri).timeout(Duration.ofMinutes(60)).GET()
+            if (sameOrigin(uri, original)) headers.forEach { (name, value) -> builder.header(name, value) }
+            if (offset > 0) builder.setHeader("Range", "bytes=$offset-")
+            val response = client.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
+            if (response.statusCode() !in setOf(301, 302, 303, 307, 308)) return response
+            response.body().close()
+            if (hop == 5) throw EmbyApiException("媒体链接重定向次数过多")
+            val location = response.headers().firstValue("Location").orElseThrow { EmbyApiException("媒体重定向缺少目标地址") }
+            val next = uri.resolve(location)
+            if (next.scheme !in setOf("http", "https") || (uri.scheme == "https" && next.scheme != "https")) {
+                throw EmbyApiException("媒体链接返回了不安全的重定向地址")
+            }
+            uri = next
+        }
+        throw EmbyApiException("媒体链接重定向次数过多")
+    }
+
+    private fun isCloudflareBlocked(headers: HttpHeaders, body: String): Boolean =
+        headers.firstValue("cf-mitigated").orElse("").equals("challenge", ignoreCase = true) ||
+            (headers.firstValue("Content-Type").orElse("").startsWith("text/html", ignoreCase = true) &&
+                (body.contains("cf-error-details", ignoreCase = true) ||
+                    body.contains("/cdn-cgi/challenge-platform/", ignoreCase = true)))
 
     fun suggestFileName(item: BaseItemDto): String {
         val baseName = when (item.Type) {
@@ -392,6 +664,15 @@ class EmbyClient(
             .build()
     }
 
+    private fun parseItem(request: HttpRequest, errorPrefix: String): BaseItemDto {
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        if (response.statusCode() !in 200..299) {
+            throw EmbyApiException("$errorPrefix（HTTP ${response.statusCode()}）", response.statusCode())
+        }
+        return gson.fromJson(response.body(), BaseItemDto::class.java)
+            ?: throw EmbyApiException("$errorPrefix：服务器未返回有效数据")
+    }
+
     private fun parseItems(
         request: HttpRequest,
         errorPrefix: String,
@@ -406,10 +687,10 @@ class EmbyClient(
 
     private fun authorizationHeader(token: String? = null): String {
         val parts = mutableListOf(
-            """Client="EmbyDownload"""",
-            """Device="PC"""",
-            """DeviceId="$deviceId"""",
-            """Version="1.0.0""""
+            """Client="${identity.clientName}"""",
+            """Device="${encode(identity.deviceName).replace("+", "%20")}"""",
+            """DeviceId="${identity.deviceId}"""",
+            """Version="${identity.clientVersion}""""
         )
         if (!token.isNullOrBlank()) {
             parts += """Token="$token""""
@@ -419,7 +700,7 @@ class EmbyClient(
 
     companion object {
         private const val DETAIL_FIELDS =
-            "Overview,Path,MediaSources,CanDownload,Container,ProductionYear,Artists,Album,RunTimeTicks," +
+            "Overview,Path,MediaSources,MediaStreams,CanDownload,Container,ProductionYear,Artists,Album,RunTimeTicks," +
                 "SeriesName,SeasonName,IndexNumber,ParentIndexNumber,ImageTags,PrimaryImageAspectRatio," +
                 "SeriesId,SeriesPrimaryImageTag,AlbumId,AlbumPrimaryImageTag,ParentId"
 
@@ -439,4 +720,4 @@ class EmbyClient(
     }
 }
 
-class EmbyApiException(message: String) : RuntimeException(message)
+class EmbyApiException(message: String, val statusCode: Int? = null) : RuntimeException(message)
